@@ -1,9 +1,12 @@
-#idndef LIBHITMAP
+#ifndef LIBHITMAP
 #define LIBHITMAP
+
+#include <atomic_ops.h>
+#include <limits.h>
 
 #define HITMAP_INITIAL_SIZE ( sizeof( AO_t ) * 8 )
 
-#if ULONG_MAX != 4294967295UL
+#if ( ULONG_MAX != 4294967295UL )
 	#define _WORD_POW ( 6 )
 #else
 	#define _WORD_POW ( 5 )

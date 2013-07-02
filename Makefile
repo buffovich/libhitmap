@@ -36,6 +36,6 @@ doc : FORCE
 	$(DOCTOOL) $(DOCFLAGS) `find src -name *.[c]`
 
 clean : FORCE
-	rm -f $(LIBNAME).so; rm -f `find src -name "*.o"`; rm src/$(CONFIG_H)
+	rm -f $(LIBNAME).so; rm -f `find src -name "*.o"`
 
 FORCE :
