@@ -11,11 +11,10 @@ void hitmap_init( AO_t map[], int len_pow ) {
 	if( len_pow < _WORD_POW )
 		len_pow = _WORD_POW;
 
-	size_t wcapacity = 1ul << ( len_pow - _WORD_POW );
-	memset( map, 0, wcapacity );
+	memset( map, 0, hitmap_calc_sz( len_pow ) * sizeof( AO_t ) );
 
 	if( len_pow > _WORD_POW )
-		for( AO_t *cur = map + wcapacity + 1,
+		for( AO_t *cur = map + ( 1ul << ( len_pow - _WORD_POW ) ) + 1,
 				*limit = map + hitmap_calc_sz( len_pow );
 			cur < limit;
 			cur += 2
@@ -32,6 +31,7 @@ void hitmap_change_for( AO_t map[],
 ) {
 	assert( map != NULL );
 	assert( ( is_put == BIT_SET ) || ( is_put == BIT_UNSET ) );
+	assert( idx < ( 1ul << len_pow ) );
 
 	if( len_pow < _WORD_POW )
 		len_pow = _WORD_POW;
