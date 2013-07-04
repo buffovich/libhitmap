@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-START_TEST( test_calc_sz )
+START_TEST( test_calc_sz_normal )
 {
 	ck_assert_int_eq( hitmap_calc_sz( 5 ), 1 );
 	ck_assert_int_eq( hitmap_calc_sz( 6 ), 4 );
@@ -13,7 +13,7 @@ START_TEST( test_calc_sz )
 }
 END_TEST
 
-START_TEST( test_init )
+START_TEST( test_init_normal )
 {
 	size_t sz = hitmap_calc_sz( 8 ),
 		capacity = ( 1ul << ( 8 - _WORD_POW ) );
@@ -64,20 +64,24 @@ START_TEST( test_init )
 	ck_assert_int_eq( map[ start_from + 1 ], SIZE_MAX );
 	
 	ck_assert_int_eq( start_from + 2, sz );
+
+	free( map );
 }
 END_TEST
 
-START_TEST( test_change_for )
+START_TEST( test_change_for_normal )
 {
 	size_t sz = hitmap_calc_sz( 8 );
-	AO_t *map = malloc( sz * sizeof( AO_t ) );
+	AO_t *map = malloc( ( sz + 2 ) * sizeof( AO_t ) );
+	map[ sz ] = 2121;
+	map[ sz + 1 ] = 1212;
 	hitmap_init( map, 8 );
 
 	hitmap_change_for( map, 8, 0, BIT_SET );
 	hitmap_change_for( map, 8, 2, BIT_SET );
 	hitmap_change_for( map, 8, 4, BIT_SET );
 
-	ck_assert_int_eq( map[ 0 ], 21 );
+	ck_assert_int_eq( map[ 0 ], 0x15 );
 
 	size_t start_with = 1ul << ( 8 - _WORD_POW );
 	ck_assert_int_eq( map[ start_with ], 7 );
@@ -91,6 +95,8 @@ START_TEST( test_change_for )
 	
 	hitmap_change_for( map, 8, 1, BIT_SET );
 
+	ck_assert_int_eq( map[ 0 ], 0x17 );
+	
 	start_with = 1ul << ( 8 - _WORD_POW );
 	ck_assert_int_eq( map[ start_with ], 7 );
 	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX - 1 );
@@ -105,6 +111,8 @@ START_TEST( test_change_for )
 	hitmap_change_for( map, 8, 5, BIT_SET );
 	hitmap_change_for( map, 8, 6, BIT_SET );
 
+	ck_assert_int_eq( map[ 0 ], 0x7F );
+
 	start_with = 1ul << ( 8 - _WORD_POW );
 	ck_assert_int_eq( map[ start_with ], 15 );
 	ck_assert_int_eq( map[ start_with + 1 ], ( SIZE_MAX ^ 7ul ) );
@@ -114,6 +122,197 @@ START_TEST( test_change_for )
 	start_with += ( 1ul << ( 8 - _WORD_POW - 2 ) ) * 2;
 	ck_assert_int_eq( map[ start_with ], 1 );
 	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ), BIT_SET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 1, BIT_SET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 3, BIT_SET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 4, BIT_SET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 5, BIT_SET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 6, BIT_SET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 7, BIT_SET );
+
+	ck_assert_int_eq( map[ 0 ], 0x7F );
+	ck_assert_int_eq( map[ 1 ], 0xFB );
+
+	start_with = 1ul << ( 8 - _WORD_POW );
+	ck_assert_int_eq( map[ start_with ],
+		0x0F | ( 0x0F << ( 1ul << ( _WORD_POW - 1 ) ) )
+	);
+	ck_assert_int_eq( map[ start_with + 1 ],
+		SIZE_MAX ^ 7ul ^ ( 0x0D << ( 1ul << ( _WORD_POW - 1 ) ) )
+	);
+	start_with += ( 1ul << ( 8 - _WORD_POW - 1 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ],
+		0x03 | ( 0x03 << ( 1ul << ( _WORD_POW - 2 ) ) )
+	);
+	ck_assert_int_eq( map[ start_with + 1 ],
+		SIZE_MAX ^ 1ul ^ ( 0x02 << ( 1ul << ( _WORD_POW - 2 ) ) )
+	);
+	start_with += ( 1ul << ( 8 - _WORD_POW - 2 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ],
+		0x01 | ( 0x01 << ( 1ul << ( _WORD_POW - 3 ) ) )
+	);
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 2, BIT_SET );
+
+	ck_assert_int_eq( map[ start_with + 1 ],
+		SIZE_MAX ^ ( 0x01 << ( 1ul << ( _WORD_POW - 3 ) ) )
+	);
+
+	ck_assert_int_eq( map[ sz ], 2121 );
+	ck_assert_int_eq( map[ sz + 1 ], 1212 );
+
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 2, BIT_UNSET );
+
+	ck_assert_int_eq( map[ 0 ], 0x7F );
+	ck_assert_int_eq( map[ 1 ], 0xFB );
+	start_with = 1ul << ( 8 - _WORD_POW );
+	ck_assert_int_eq( map[ start_with ],
+		0x0F | ( 0x0F << ( 1ul << ( _WORD_POW - 1 ) ) )
+	);
+	ck_assert_int_eq( map[ start_with + 1 ],
+		SIZE_MAX ^ 7ul ^ ( 0x0D << ( 1ul << ( _WORD_POW - 1 ) ) )
+	);
+	start_with += ( 1ul << ( 8 - _WORD_POW - 1 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ],
+		0x03 | ( 0x03 << ( 1ul << ( _WORD_POW - 2 ) ) )
+	);
+	ck_assert_int_eq( map[ start_with + 1 ],
+		SIZE_MAX ^ 1ul ^ ( 0x02 << ( 1ul << ( _WORD_POW - 2 ) ) )
+	);
+	start_with += ( 1ul << ( 8 - _WORD_POW - 2 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ],
+		0x01 | ( 0x01 << ( 1ul << ( _WORD_POW - 3 ) ) )
+	);
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ), BIT_UNSET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 1, BIT_UNSET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 3, BIT_UNSET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 4, BIT_UNSET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 5, BIT_UNSET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 6, BIT_UNSET );
+	hitmap_change_for( map, 8, ( 1ul << _WORD_POW ) + 7, BIT_UNSET );
+
+	ck_assert_int_eq( map[ 0 ], 0x7F );
+
+	start_with = 1ul << ( 8 - _WORD_POW );
+	ck_assert_int_eq( map[ start_with ], 15 );
+	ck_assert_int_eq( map[ start_with + 1 ], ( SIZE_MAX ^ 7ul ) );
+	start_with += ( 1ul << ( 8 - _WORD_POW - 1 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ], 3 );
+	ck_assert_int_eq( map[ start_with + 1 ], ( SIZE_MAX ^ 1ul ) );
+	start_with += ( 1ul << ( 8 - _WORD_POW - 2 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ], 1 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+
+	hitmap_change_for( map, 8, 3, BIT_UNSET );
+	hitmap_change_for( map, 8, 5, BIT_UNSET );
+	hitmap_change_for( map, 8, 6, BIT_UNSET );
+
+	ck_assert_int_eq( map[ 0 ], 0x17 );
+	
+	start_with = 1ul << ( 8 - _WORD_POW );
+	ck_assert_int_eq( map[ start_with ], 7 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX - 1 );
+	start_with += ( 1ul << ( 8 - _WORD_POW - 1 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ], 3 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+	start_with += ( 1ul << ( 8 - _WORD_POW - 2 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ], 1 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+
+	hitmap_change_for( map, 8, 1, BIT_UNSET );
+
+	ck_assert_int_eq( map[ 0 ], 0x15 );
+
+	start_with = 1ul << ( 8 - _WORD_POW );
+	ck_assert_int_eq( map[ start_with ], 7 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+	start_with += ( 1ul << ( 8 - _WORD_POW - 1 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ], 3 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+	start_with += ( 1ul << ( 8 - _WORD_POW - 2 ) ) * 2;
+	ck_assert_int_eq( map[ start_with ], 1 );
+	ck_assert_int_eq( map[ start_with + 1 ], SIZE_MAX );
+
+	ck_assert_int_eq( map[ sz ], 2121 );
+	ck_assert_int_eq( map[ sz + 1 ], 1212 );
+
+	free( map );
+}
+END_TEST
+
+START_TEST( test_has_normal )
+{
+	AO_t *map = malloc( hitmap_calc_sz( 8 ) * sizeof( AO_t ) );
+	hitmap_init( map, 8 );
+
+	ck_assert( ! hitmap_has( map, 8, BIT_SET ) );
+	for( size_t idx = 0; idx < 256; ++idx ) {
+		ck_assert( hitmap_has( map, 8, BIT_UNSET ) );
+		hitmap_change_for( map, 8, idx, BIT_SET );
+		ck_assert( hitmap_has( map, 8, BIT_SET ) );
+	}
+
+	ck_assert( ! hitmap_has( map, 8, BIT_UNSET ) );
+
+	free( map );
+}
+END_TEST
+
+START_TEST( test_init_border )
+{
+	AO_t *map = malloc( 3 * sizeof( AO_t ) );
+	map[ 0 ] = 3;
+	map[ 1 ] = 1;
+	map[ 2 ] = 2;
+	hitmap_init( map, 5 );
+
+	ck_assert_int_eq( map[ 1 ], 1 );
+	ck_assert_int_eq( map[ 2 ], 2 );
+	ck_assert_int_eq( map[ 0 ], 0 );
+}
+END_TEST
+
+START_TEST( test_change_for_border )
+{
+	AO_t *map = malloc( 3 * sizeof( AO_t ) );
+	map[ 0 ] = 3;
+	map[ 1 ] = 2121;
+	map[ 2 ] = 1212;
+	hitmap_init( map, 5 );
+
+	hitmap_change_for( map, 5, 31, BIT_SET );
+
+	ck_assert_int_eq( map[ 0 ], 1ul << 31 );
+	ck_assert_int_eq( map[ 1 ], 2121 );
+	ck_assert_int_eq( map[ 2 ], 1212 );
+
+	hitmap_change_for( map, 5, 31, BIT_UNSET );
+
+	ck_assert_int_eq( map[ 0 ], 0 );
+	ck_assert_int_eq( map[ 1 ], 2121 );
+	ck_assert_int_eq( map[ 2 ], 1212 );
+}
+END_TEST
+
+START_TEST( test_has_border )
+{
+	AO_t *map = malloc( sizeof( AO_t ) );
+	hitmap_init( map, 5 );
+
+	ck_assert( ! hitmap_has( map, 5, BIT_SET ) );
+	for( size_t idx = 0; idx < ( 1ul << 5 ); ++idx ) {
+		ck_assert( hitmap_has( map, 5, BIT_UNSET ) );
+		hitmap_change_for( map, 5, idx, BIT_SET );
+		ck_assert( hitmap_has( map, 5, BIT_SET ) );
+	}
+
+	ck_assert( ! hitmap_has( map, 5, BIT_UNSET ) );
+
+	free( map );
 }
 END_TEST
 
@@ -121,10 +320,18 @@ Suite *hitmap_suite( void ) {
 	Suite *s = suite_create( "Hitmap" );
 
 	TCase *tc_basic = tcase_create( "Basic" );
-	tcase_add_test( tc_basic, test_calc_sz );
-	tcase_add_test( tc_basic, test_init );
-	tcase_add_test( tc_basic, test_change_for );
+	tcase_add_test( tc_basic, test_calc_sz_normal );
+	tcase_add_test( tc_basic, test_init_normal );
+	tcase_add_test( tc_basic, test_change_for_normal );
+	tcase_add_test( tc_basic, test_has_normal );
+	
+	TCase *tc_border = tcase_create( "Border" );
+	tcase_add_test( tc_border, test_init_border );
+	tcase_add_test( tc_border, test_change_for_border );
+	tcase_add_test( tc_border, test_has_border );
+
 	suite_add_tcase( s, tc_basic );
+	suite_add_tcase( s, tc_border );
 
 	return s;
 }

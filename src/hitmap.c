@@ -257,6 +257,6 @@ int hitmap_has( AO_t map[], int len_pow, enum hitmap_mark which ) {
 	}
 
 	return (
-		AO_load( &( map[ hitmap_calc_sz( len_pow ) - 2 + which ] ) ) != 0
+		AO_load( &( map[ hitmap_calc_sz( len_pow ) - 1 - which ] ) ) != 0
 	);
 }
