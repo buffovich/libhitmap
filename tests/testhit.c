@@ -262,9 +262,58 @@ START_TEST( test_has_normal )
 }
 END_TEST
 
+START_TEST( test_discover_normal )
+{
+	AO_t *map = malloc( hitmap_calc_sz( 8 ) * sizeof( AO_t ) );
+	hitmap_init( map, 8 );
+
+	ck_assert_int_eq( hitmap_discover( map, 8, 0, FIND_SET ), SIZE_MAX );
+	ck_assert_int_eq(
+		hitmap_discover( map, 8, ( 1ul << 8 ) - 1, FIND_SET ),
+		SIZE_MAX
+	);
+
+	ck_assert_int_eq( hitmap_discover( map, 8, 0, FIND_UNSET ), 0 );
+	ck_assert_int_eq(
+		hitmap_discover( map, 8, ( 1ul << 8 ) - 1, FIND_UNSET ),
+		( 1ul << 8 ) - 1
+	);
+
+	for( size_t cyc = 0; cyc < ( 1ul << 8 ); ++cyc ) {
+		hitmap_change_for( map, 8, cyc, BIT_SET );
+		ck_assert_int_eq( hitmap_discover( map, 8, 0, FIND_SET ), cyc );
+		hitmap_change_for( map, 8, cyc, BIT_UNSET );
+	}
+
+	hitmap_change_for( map, 8, 0, BIT_SET );
+	hitmap_change_for( map, 8, 1, BIT_SET );
+	hitmap_change_for( map, 8, 3, BIT_SET );
+	hitmap_change_for( map, 8, 7, BIT_SET );
+	hitmap_change_for( map, 8, 15, BIT_SET );
+	hitmap_change_for( map, 8, 31, BIT_SET );
+	hitmap_change_for( map, 8, 33, BIT_SET );
+	hitmap_change_for( map, 8, 63, BIT_SET );
+	hitmap_change_for( map, 8, 127, BIT_SET );
+	hitmap_change_for( map, 8, 255, BIT_SET );
+
+	ck_assert_int_eq( hitmap_discover( map, 8, 0, FIND_SET ), 0 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 1, FIND_SET ), 1 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 2, FIND_SET ), 3 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 5, FIND_SET ), 7 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 8, FIND_SET ), 15 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 19, FIND_SET ), 31 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 32, FIND_SET ), 33 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 34, FIND_SET ), 63 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 66, FIND_SET ), 127 );
+	ck_assert_int_eq( hitmap_discover( map, 8, 150, FIND_SET ), 255 );
+
+	free( map );
+}
+END_TEST
+
 START_TEST( test_init_border )
 {
-	AO_t *map = malloc( 3 * sizeof( AO_t ) );
+	AO_t map[ 3 ];
 	map[ 0 ] = 3;
 	map[ 1 ] = 1;
 	map[ 2 ] = 2;
@@ -278,7 +327,7 @@ END_TEST
 
 START_TEST( test_change_for_border )
 {
-	AO_t *map = malloc( 3 * sizeof( AO_t ) );
+	AO_t map[ 3 ];
 	map[ 0 ] = 3;
 	map[ 1 ] = 2121;
 	map[ 2 ] = 1212;
@@ -300,7 +349,7 @@ END_TEST
 
 START_TEST( test_has_border )
 {
-	AO_t *map = malloc( sizeof( AO_t ) );
+	AO_t map[ 1 ];
 	hitmap_init( map, 5 );
 
 	ck_assert( ! hitmap_has( map, 5, BIT_SET ) );
@@ -311,8 +360,6 @@ START_TEST( test_has_border )
 	}
 
 	ck_assert( ! hitmap_has( map, 5, BIT_UNSET ) );
-
-	free( map );
 }
 END_TEST
 
@@ -324,11 +371,13 @@ Suite *hitmap_suite( void ) {
 	tcase_add_test( tc_basic, test_init_normal );
 	tcase_add_test( tc_basic, test_change_for_normal );
 	tcase_add_test( tc_basic, test_has_normal );
+	tcase_add_test( tc_basic, test_discover_normal );
 	
 	TCase *tc_border = tcase_create( "Border" );
 	tcase_add_test( tc_border, test_init_border );
 	tcase_add_test( tc_border, test_change_for_border );
 	tcase_add_test( tc_border, test_has_border );
+	//tcase_add_test( tc_border, test_discover_border );
 
 	suite_add_tcase( s, tc_basic );
 	suite_add_tcase( s, tc_border );

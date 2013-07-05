@@ -98,7 +98,7 @@ static size_t _ffcl_after( AO_t mword, size_t idx ) {
 		cyc <= ( sizeof( unsigned long ) * 8 );
 		++cyc, mask <<= 1
 	)
-		if( mword & mask )
+		if( ! ( mword & mask ) )
 			return cyc;
 
 	return 0;
@@ -148,7 +148,9 @@ static int _map_bob_up( AO_t map[],
 		++level
 	) {
 		bitn = _ffsl_after(
-			AO_load( &( level_border[ ( idx >> _WORD_POW ) + which ] ) ),
+			AO_load(
+				&( level_border[ ( idx >> ( _WORD_POW - 1 ) ) + which ] )
+			),
 			idx & _BIT_NUMBER_MASK
 		);
 
@@ -194,7 +196,9 @@ static int _map_sink( AO_t map[],
 			--level
 		) {
 			bitn = _ffsl_after(
-				AO_load( &( level_border[ ( idx >> _WORD_POW ) + which ] ) ),
+				AO_load(
+					&( level_border[ ( idx >> ( _WORD_POW - 1 ) ) + which ] )
+				),
 				idx & _BIT_NUMBER_MASK
 			);
 

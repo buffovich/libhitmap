@@ -8,7 +8,6 @@ LIBNAME			= libhitmap
 CC				?= gcc
 LINKFLAGS		= -Xlinker --no-as-needed -Xlinker -Bdynamic -shared -Xlinker --export-dynamic -o $(LIBNAME).so
 FLAGS			= -Wall -Wextra
-LIBFLAGS		= -fPIC $(FLAGS)
 
 ifdef DEBUG
 DEBUG_FORMAT	?= gdb
@@ -18,6 +17,8 @@ OPTIMIZE		?= 3
 FLAGS			+= -O$(OPTIMIZE)
 LINKFLAGS		+= -s
 endif
+
+LIBFLAGS		= -fPIC $(FLAGS)
 
 CFLAGS		+= -std=c11
 
