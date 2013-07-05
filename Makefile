@@ -4,9 +4,9 @@ libdirs_	= /usr/lib
 libs_		=
 include_ 	= /usr/include $(ROOT)/src
 
-LIBNAME			= libhitmap
+LIBNAME			= hitmap
 CC				?= gcc
-LINKFLAGS		= -Xlinker --no-as-needed -Xlinker -Bdynamic -shared -Xlinker --export-dynamic -o $(LIBNAME).so
+LINKFLAGS		= -Xlinker --no-as-needed -Xlinker -Bdynamic -shared -Xlinker --export-dynamic -o lib$(LIBNAME).so
 FLAGS			= -Wall -Wextra
 
 ifdef DEBUG
@@ -16,6 +16,11 @@ else
 OPTIMIZE		?= 3
 FLAGS			+= -O$(OPTIMIZE)
 LINKFLAGS		+= -s
+endif
+
+ifdef COVERAGE
+FLAGS			+= -fprofile-arcs -ftest-coverage
+LINKFLAGS		+= -fprofile-arcs
 endif
 
 LIBFLAGS		= -fPIC $(FLAGS)
@@ -33,20 +38,33 @@ build : $(objects)
 	$(CC) $(LINKFLAGS) $^ $(LIBDIRS) $(LIBS)
 
 src/%.o : $(ROOT)/src/%.c
-	cd src; $(CC) $(CFLAGS) $(LIBFLAGS) $(INCLUDE) -c $<
+	cd src; \
+	$(CC) $(CFLAGS) $(LIBFLAGS) $(INCLUDE) -c $<
 
 test : build $(tests)
-	export LD_LIBRARY_PATH=.; \
-	./tests/test.* ;
+
+test-run : test
+	export LD_LIBRARY_PATH=../; \
+	cd tests; \
+	./test.* ;
+
+coverage : FORCE
+	make test-run COVERAGE=1; \
+	lcov --capture --directory . --output-file cov/$(LIBNAME).info; \
+	genhtml cov/$(LIBNAME).info --output-directory cov ;
 
 tests/test.% : $(ROOT)/tests/%.c
-	$(CC) $(CFLAGS) $(FLAGS) $(INCLUDE) -o $@ $< $(LIBDIRS) -L. -lcheck -lhitmap
+	cd tests; \
+	$(CC) $(CFLAGS) $(FLAGS) $(INCLUDE) -o $(ROOT)/$@ $< $(LIBDIRS) -L.. -lcheck -l$(LIBNAME)
 
 doc : FORCE
 	$(DOCTOOL) $(DOCFLAGS) `find src -name *.[c]`
 
 clean : FORCE
-	rm -f $(LIBNAME).so; rm -f `find src -name "*.o"`; \
-	rm -f `find tests -name test.*`
+	rm -f lib$(LIBNAME).so; \
+	rm -f `find src -name "*.o"`; \
+	rm -f `find tests -name test.*`; \
+	rm -f `find . -name '*.gcda'`; \
+	rm -f `find . -name '*.gcno'`;
 
 FORCE :

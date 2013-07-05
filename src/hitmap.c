@@ -236,6 +236,8 @@ size_t hitmap_discover( AO_t map[],
 	size_t start_idx,
 	enum hitmap_find which
 ) {
+	assert( start_idx < ( 1ul << len_pow ) );
+
 	int level = 0;
 
 	do {
