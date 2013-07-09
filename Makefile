@@ -58,13 +58,15 @@ tests/test.% : $(ROOT)/tests/%.c
 	$(CC) $(CFLAGS) $(FLAGS) $(INCLUDE) -o $(ROOT)/$@ $< $(LIBDIRS) -L.. -lcheck -l$(LIBNAME)
 
 doc : FORCE
-	$(DOCTOOL) $(DOCFLAGS) `find src -name *.[c]`
+	doxygen
 
 clean : FORCE
 	rm -f lib$(LIBNAME).so; \
 	rm -f `find src -name "*.o"`; \
 	rm -f `find tests -name test.*`; \
 	rm -f `find . -name '*.gcda'`; \
-	rm -f `find . -name '*.gcno'`;
+	rm -f `find . -name '*.gcno'`; \
+	rm -rf ./cov/* ; \
+	rm -rf ./doc/* ;
 
 FORCE :

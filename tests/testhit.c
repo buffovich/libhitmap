@@ -409,6 +409,12 @@ START_TEST( test_discover_normal )
 }
 END_TEST
 
+START_TEST( test_calc_sz_border )
+{
+	ck_assert_int_eq( hitmap_calc_sz( 1 ), 1 );
+}
+END_TEST
+
 START_TEST( test_init_border )
 {
 	AO_t map[ 3 ];
@@ -509,6 +515,7 @@ Suite *hitmap_suite( void ) {
 	tcase_add_test( tc_border, test_change_for_border );
 	tcase_add_test( tc_border, test_has_border );
 	tcase_add_test( tc_border, test_discover_border );
+	tcase_add_test( tc_border, test_calc_sz_border );
 
 	suite_add_tcase( s, tc_basic );
 	suite_add_tcase( s, tc_border );
