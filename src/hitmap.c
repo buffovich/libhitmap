@@ -7,15 +7,48 @@
 #include <stdint.h>
 #include <assert.h>
 
-void hitmap_init( AO_t map[], int len_pow ) {
+static size_t _calc_elements_num( int len_pow ) {
+	// everything wich is less than 1 << _WORD_POW
+	// will be put to just one word
+	if( len_pow <= _WORD_POW )
+		return 1;
+
+	len_pow -= _WORD_POW;
+	// we don't need layered structure for less than 4 words
+	if( len_pow < 2 )
+		return 2;
+
+	size_t sz = 1ul << len_pow;
+	while( len_pow > _WORD_POW ) {
+		len_pow -= _WORD_POW;
+		sz += 1ul << ( len_pow + 1 );
+	}
+
+	if( len_pow >= 2 )
+		sz += 2;
+
+	return sz;
+}
+
+size_t hitmap_calc_sz( int len_pow ) {
+	return ( sizeof( map_t ) +
+		_calc_elements_num( len_pow ) * sizeof( AO_t )
+	);
+}
+
+void hitmap_init( map_t *map, int len_pow ) {
 	if( len_pow < _WORD_POW )
 		len_pow = _WORD_POW;
 
-	memset( map, 0, hitmap_calc_sz( len_pow ) * sizeof( AO_t ) );
+	map->len_pow = len_pow;
 
-	if( len_pow > _WORD_POW )
-		for( AO_t *cur = map + ( 1ul << ( len_pow - _WORD_POW ) ) + 1,
-				*limit = map + hitmap_calc_sz( len_pow );
+	size_t el_num = _calc_elements_num( len_pow );
+	memset( map->bits, 0, el_num * sizeof( AO_t ) );
+
+	len_pow -= _WORD_POW;
+	if( len_pow >= 2 )
+		for( AO_t *cur = map->bits + ( 1ul << len_pow ),
+				*limit = map->bits + el_num;
 			cur < limit;
 			cur += 2
 		)
@@ -64,12 +97,12 @@ void hitmap_change_for( AO_t map[],
 		++level
 	) {
 		bit = 1ul << ( idx & _BIT_NUMBER_MASK );
-		level_border[ widx * 2 + 1 - is_put ] |= bit;
+		level_border[ widx * 2 + is_put ] |= bit;
 
 		if( is_full ) {
-			level_border[ widx * 2 + is_put ] &= ~bit;
+			level_border[ widx * 2 + 1 - is_put ] &= ~bit;
 			is_full = ! (
-					level_border[ widx * 2 + is_put ] &
+					level_border[ widx * 2 + 1 - is_put ] &
 					( 1ul << ( ( idx & _BIT_NUMBER_MASK ) ^ 1ul ) )
 				);
 		}
@@ -108,7 +141,7 @@ static int _map_bob_up( AO_t map[],
 	int len_pow,
 	int *levelp,
 	size_t *idxp,
-	enum hitmap_find which
+	enum hitmap_mark which
 ) {
 	int level_limit = len_pow - _WORD_POW + 1;
 	int level = *levelp;
@@ -154,7 +187,7 @@ static int _map_sink( AO_t map[],
 	int len_pow,
 	int *levelp,
 	size_t *idxp,
-	enum hitmap_find which
+	enum hitmap_mark which
 ) {
 	if( *levelp < 1 )
 		return 1;
@@ -199,13 +232,13 @@ static int _map_sink( AO_t map[],
 size_t hitmap_discover( AO_t map[],
 	int len_pow,
 	size_t start_idx,
-	enum hitmap_find which
+	enum hitmap_mark which
 ) {
 	assert( map != NULL );
 	assert( start_idx < ( 1ul << len_pow ) );
 
 	AO_t mword = AO_load( &( map[ start_idx >> _WORD_POW ] ) );
-	size_t bitn = ( which == FIND_SET ) ?
+	size_t bitn = ( which == BIT_SET ) ?
 		_ffsl_after( mword, start_idx & _BIT_NUMBER_MASK ) :
 		_ffcl_after( mword, start_idx & _BIT_NUMBER_MASK );
 
@@ -233,7 +266,7 @@ size_t hitmap_discover( AO_t map[],
 		);
 
 		mword = AO_load( &( map[ start_idx >> _WORD_POW ] ) );
-		bitn = ( which == FIND_SET ) ?
+		bitn = ( which == BIT_SET ) ?
 			_ffsl_after( mword, start_idx & _BIT_NUMBER_MASK ) :
 			_ffcl_after( mword, start_idx & _BIT_NUMBER_MASK );
 
@@ -269,6 +302,6 @@ int hitmap_has( AO_t map[], int len_pow, enum hitmap_mark which ) {
 	}
 
 	return (
-		AO_load( &( map[ hitmap_calc_sz( len_pow ) - 1 - which ] ) ) != 0
+		AO_load( &( map[ hitmap_calc_sz( len_pow ) - 2 + which ] ) ) != 0
 	);
 }
