@@ -107,8 +107,7 @@ extern void hitmap_init( map_t *map, int len_pow );
  * @param is_put operation selector (set/unset)
  * @see hitmap_discover
  */
-extern void hitmap_change_for( AO_t map[],
-	int len_pow,
+extern void hitmap_change_for( map_t *map,
 	size_t idx,
 	enum hitmap_mark is_put
 );
@@ -126,8 +125,7 @@ extern void hitmap_change_for( AO_t map[],
  * @see hitmap_change_for
  * @see hitmap_has
  */
-extern size_t hitmap_discover( AO_t map[],
-	int len_pow,
+extern size_t hitmap_discover( map_t *map,
 	size_t start_idx,
 	enum hitmap_mark which
 );
