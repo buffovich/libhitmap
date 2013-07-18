@@ -123,7 +123,7 @@ void hitmap_change_for( map_t *map, size_t idx, enum hitmap_mark is_put ) {
 inline static size_t _ffsl_after( AO_t mword, size_t idx ) {
 	int ret = ffsl( mword >> idx );
 	
-	if( ret && ( ret > 0 ) )
+	if( ret )
 		return ( idx + ret );
 	else
 		return 0;
@@ -131,9 +131,8 @@ inline static size_t _ffsl_after( AO_t mword, size_t idx ) {
 	return 0;
 }
 
-static size_t _ffcl_after( AO_t mword, size_t idx ) {
-	AO_t mask = 1 << idx;
-	for( size_t cyc = idx + 1;
+inline static size_t _ffcl_after( AO_t mword, size_t idx ) {
+	for( size_t cyc = idx + 1, mask = 1 << idx;
 		cyc <= ( sizeof( unsigned long ) * 8 );
 		++cyc, mask <<= 1
 	)
@@ -163,14 +162,8 @@ static int _map_bob_up( AO_t **level_borderp,
 	size_t idx = *idxp;
 
 	size_t bitn = 0;
-	if( cur_pow < 2 ) {
-		bitn = _get_bit_number( level_border, idx, which );
-		if( bitn == 0 )
-			idx = ( idx & ( ~ _BIT_NUMBER_MASK ) ) + HITMAP_INITIAL_SIZE;
-		if( idx >= ( 1ul << cur_pow )  )
-			return 0;
-	} else
-		while( cur_pow > _WORD_POW ) {
+	if( cur_pow > _WORD_POW )
+		while( 1 ) {
 			bitn = _get_bit_number( level_border, idx, which );
 
 			if( bitn != 0 )
@@ -181,23 +174,23 @@ static int _map_bob_up( AO_t **level_borderp,
 			if( idx >= ( 1ul << cur_pow )  )
 				return 0;
 
-			cur_pow -= _WORD_POW;
-			if( cur_pow > _WORD_POW ) {
+			if( cur_pow > 2 * _WORD_POW ) {
+				cur_pow -= _WORD_POW;
 				level_border += ( 1ul << ( cur_pow + 1 ) );
 				idx >>= _WORD_POW;
+			} else {
+				if( cur_pow >= ( 2 + _WORD_POW ) ) {
+					cur_pow -= _WORD_POW;
+					level_border += ( 1ul << ( cur_pow + 1 ) );
+					idx >>= cur_pow;
+				}
+
+				bitn = _get_bit_number( level_border, idx, which );
+				break;
 			}
 		}
-
-	if( bitn == 0 ) {
-		if( cur_pow < 2 ) {
-			bitn = _get_bit_number( level_border, idx, which );
-			cur_pow += _WORD_POW;
-		} else {
-			idx >>= cur_pow;
-			level_border += ( 1ul << ( cur_pow + 1 ) );
-			bitn = _get_bit_number( level_border, idx, which );
-		}
-	}
+	else
+		bitn = _get_bit_number( level_border, idx, which );
 
 	if( bitn != 0 ) {
 		*idxp =( idx & ( ~ _BIT_NUMBER_MASK ) ) | ( bitn - 1 );
@@ -238,15 +231,46 @@ static int _map_sink( AO_t **level_borderp,
 		}
 
 		idx = ( ( idx & ( ~ _BIT_NUMBER_MASK ) ) | ( bitn - 1 ) ) << _WORD_POW;
-
+		level_border -= ( 1ul << ( cur_pow + 1 ) );
 		cur_pow += _WORD_POW;
-		if( cur_pow < len_pow )
-			level_border -= ( 1ul << ( cur_pow + 1 ) );
 	}
 
 	*idxp = idx;
 
 	return 1;
+}
+
+enum _scan_result {
+	SCAN_NOT_FOUND,
+	SCAN_FOUND,
+	SCAN_NEXT
+};
+
+static inline enum _scan_result _scan_0_level( map_t *map,
+	size_t *idxp,
+	enum hitmap_mark which
+) {
+	size_t idx = *idxp;
+	AO_t mword = AO_load( &( map->bits[ idx >> _WORD_POW ] ) );
+	size_t bitn = ( which == BIT_SET ) ?
+		_ffsl_after( mword, idx & _BIT_NUMBER_MASK ) :
+		_ffcl_after( mword, idx & _BIT_NUMBER_MASK );
+
+	idx &= ~ _BIT_NUMBER_MASK;
+
+	if( bitn != 0 ) {
+		*idxp = idx | ( bitn - 1 );
+		return SCAN_FOUND;
+	}
+
+	idx += HITMAP_INITIAL_SIZE;
+
+	if( idx >= ( 1ul << map->len_pow )  )
+		return SCAN_NOT_FOUND;
+
+	*idxp = idx;
+
+	return SCAN_NEXT;
 }
 
 size_t hitmap_discover( map_t *map,
@@ -256,28 +280,19 @@ size_t hitmap_discover( map_t *map,
 	assert( map != NULL );
 	assert( start_idx < ( 1ul << map->len_pow ) );
 
-	AO_t mword = AO_load( &( map->bits[ start_idx >> _WORD_POW ] ) );
-	size_t bitn = ( which == BIT_SET ) ?
-		_ffsl_after( mword, start_idx & _BIT_NUMBER_MASK ) :
-		_ffcl_after( mword, start_idx & _BIT_NUMBER_MASK );
-
-	start_idx &= ~ _BIT_NUMBER_MASK;
-
-	if( bitn != 0 )
-		return start_idx | ( bitn - 1 );
-
-	if( map->len_pow <= _WORD_POW )
-		return SIZE_MAX;
-
-	start_idx += HITMAP_INITIAL_SIZE;
-
-	if( start_idx >= ( 1ul << map->len_pow )  )
-		return SIZE_MAX;
+	switch( _scan_0_level( map, &start_idx, which ) ) {
+		case SCAN_FOUND:
+			return start_idx;
+		case SCAN_NOT_FOUND:
+			return SIZE_MAX;
+		default:
+			break;
+	}
 
 	int cur_pow = map->len_pow - _WORD_POW;
 	if( cur_pow < 2 ) {
-		mword = AO_load( &( map->bits[ start_idx >> _WORD_POW ] ) );
-		bitn = ( which == BIT_SET ) ?
+		AO_t mword = AO_load( &( map->bits[ start_idx >> _WORD_POW ] ) );
+		size_t bitn = ( which == BIT_SET ) ?
 			_ffsl_after( mword, 0 ) :
 			_ffcl_after( mword, 0 );
 
@@ -286,8 +301,11 @@ size_t hitmap_discover( map_t *map,
 		else
 			return SIZE_MAX;
 	} else {
+		int initial_shift = ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
 		AO_t *level_border = map->bits + ( 1ul << cur_pow );
-		start_idx >>= ( ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow );
+		start_idx >>= initial_shift;
+		AO_t *initial_level_border = level_border;
+		int initial_cur_pow = cur_pow;
 		while( 1 ) {
 			do{
 				if( ! _map_bob_up(
@@ -300,24 +318,18 @@ size_t hitmap_discover( map_t *map,
 				)
 			);
 
-			mword = AO_load( &( map->bits[ start_idx >> _WORD_POW ] ) );
-			bitn = ( which == BIT_SET ) ?
-				_ffsl_after( mword, start_idx & _BIT_NUMBER_MASK ) :
-				_ffcl_after( mword, start_idx & _BIT_NUMBER_MASK );
+			switch( _scan_0_level( map, &start_idx, which ) ) {
+				case SCAN_FOUND:
+					return start_idx;
+				case SCAN_NOT_FOUND:
+					return SIZE_MAX;
+				default:
+					break;
+			}
 
-			start_idx &= ~ _BIT_NUMBER_MASK;
-
-			if( bitn != 0 )
-				return start_idx | ( bitn - 1 );
-
-			start_idx += HITMAP_INITIAL_SIZE;
-
-			if( start_idx >= ( 1ul << map->len_pow )  )
-				return SIZE_MAX;
-
-			cur_pow = map->len_pow - _WORD_POW;
-			level_border = map->bits + ( 1ul << cur_pow );
-			start_idx >>= ( ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow );
+			cur_pow = initial_cur_pow;
+			level_border = initial_level_border;
+			start_idx >>= initial_shift;
 		}
 	}
 
