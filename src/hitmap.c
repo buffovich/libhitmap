@@ -121,7 +121,14 @@ void hitmap_change_for( map_t *map, size_t idx, enum hitmap_mark is_put ) {
 }
 
 inline static size_t _ffsl_after( AO_t mword, size_t idx ) {
-	int ret = ffsl( mword >> idx );
+	if( mword == 0 )
+		return 0;
+
+	#if defined( __GNUC__ ) && !defined( __INTEL_COMPILER )
+		int ret = __builtin_ffsl( mword >> idx );
+	#else
+		int ret = ffsl( mword >> idx );
+	#endif
 	
 	if( ret )
 		return ( idx + ret );
@@ -132,14 +139,7 @@ inline static size_t _ffsl_after( AO_t mword, size_t idx ) {
 }
 
 inline static size_t _ffcl_after( AO_t mword, size_t idx ) {
-	for( size_t cyc = idx + 1, mask = 1 << idx;
-		cyc <= ( sizeof( unsigned long ) * 8 );
-		++cyc, mask <<= 1
-	)
-		if( ! ( mword & mask ) )
-			return cyc;
-
-	return 0;
+	return _ffsl_after( ~ mword, idx );
 }
 
 inline static size_t _get_bit_number( AO_t *level_border,

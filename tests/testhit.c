@@ -1,8 +1,12 @@
+#define _GNU_SOURCE
+
 #include <check.h>
 #include <hitmap.h>
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <assert.h>
+#include <sys/times.h>
 
 START_TEST( test_calc_sz_normal )
 {
@@ -460,38 +464,98 @@ START_TEST( test_has_normal )
 	free( map );
 }
 END_TEST
+*/
+
+void dummy_change_for( AO_t *map,
+	int len_pow,
+	size_t idx,
+	enum hitmap_mark is_put
+) {
+	assert( map != NULL );
+	assert( ( is_put == BIT_SET ) || ( is_put == BIT_UNSET ) );
+	assert( idx < ( 1ul << len_pow ) );
+	
+	switch( is_put ) {
+		case BIT_SET:
+			map[ idx >> _WORD_POW ] |=
+				1ul << ( idx & ( HITMAP_INITIAL_SIZE - 1 ) );
+			break;
+		case BIT_UNSET:
+			map[ idx >> _WORD_POW ] &=
+				~ ( 1ul << ( idx & ( HITMAP_INITIAL_SIZE - 1 ) ) );
+			break;
+	}
+}
+
+inline static size_t _ffcl( AO_t mword ) {
+	return ffsl( ~ mword );
+}
+
+size_t dummy_discover( AO_t *map,
+	int len_pow,
+	size_t start_idx,
+	enum hitmap_mark which
+) {
+	assert( map != NULL );
+	assert( ( which == BIT_SET ) || ( which == BIT_UNSET ) );
+	assert( start_idx < ( 1ul << len_pow ) );
+
+	size_t wcapacity = 1ul << ( len_pow - _WORD_POW );
+	size_t bitn = 0;
+	switch( which ) {
+		case BIT_SET:
+			for( size_t cyc = start_idx >> _WORD_POW;
+				cyc < wcapacity;
+				++cyc
+			) {
+				bitn = ( size_t ) ffsl( map[ cyc ] );
+				if( bitn != 0 )
+					return ( cyc << _WORD_POW ) | ( bitn - 1 );
+			}
+			break;
+		case BIT_UNSET:
+			for( size_t cyc = start_idx >> _WORD_POW;
+				cyc < wcapacity;
+				++cyc
+			) {
+				bitn = _ffcl( map[ cyc ] );
+				if( bitn != 0 )
+					return ( cyc << _WORD_POW ) | ( bitn - 1 );
+			}
+			break;
+	}
+}
 
 START_TEST( test_discover_normal )
 {
-	AO_t *map = malloc( hitmap_calc_sz( _WORD_POW + 3 ) * sizeof( AO_t ) );
-	hitmap_init( map, _WORD_POW + 3 );
+	size_t sz = hitmap_calc_sz( 4 * _WORD_POW + 1 );
+	map_t *map = malloc( sz );
+	hitmap_init( map, 2 * _WORD_POW );
 
 	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 0, BIT_SET ), SIZE_MAX
+		hitmap_discover( map, 0, BIT_SET ), SIZE_MAX
 	);
 	ck_assert_int_eq(
 		hitmap_discover( map,
-			_WORD_POW + 3,
-			( 1ul << ( _WORD_POW + 3 ) ) - 1,
+			( 1ul << ( 2 * _WORD_POW - 1 ) ) - 1,
 			BIT_SET
 		),
 		SIZE_MAX
 	);
 
-	ck_assert_int_eq( hitmap_discover( map, _WORD_POW + 3, 0, BIT_UNSET ), 0 );
+	ck_assert_int_eq( hitmap_discover( map, 0, BIT_UNSET ), 0 );
 	ck_assert_int_eq(
 		hitmap_discover( map,
-			_WORD_POW + 3,
-			( 1ul << ( _WORD_POW + 3 ) ) - 1,
+			( 1ul << ( 2 * _WORD_POW - 1 ) ) - 1,
 			BIT_UNSET
 		),
-		( 1ul << ( _WORD_POW + 3 ) ) - 1
+		( 1ul << ( 2 * _WORD_POW - 1 ) ) - 1
 	);
 
-	for( size_t cyc = 0; cyc < ( 1ul << ( _WORD_POW + 3 ) ); ++cyc ) {
+	for( size_t cyc = 0; cyc < ( 1ul << ( 2 * _WORD_POW ) ); ++cyc ) {
 		hitmap_change_for( map, cyc, BIT_SET );
 		ck_assert_int_eq(
-			hitmap_discover( map, _WORD_POW + 3, 0, BIT_SET ),
+			hitmap_discover( map, 0, BIT_SET ),
 			cyc
 		);
 		hitmap_change_for( map, cyc, BIT_UNSET );
@@ -506,43 +570,200 @@ START_TEST( test_discover_normal )
 	hitmap_change_for( map, 33, BIT_SET );
 	hitmap_change_for( map, 63, BIT_SET );
 	hitmap_change_for( map, 127, BIT_SET );
-	hitmap_change_for( map,
-		( 1ul << ( _WORD_POW + 3 ) ) - 1,
+	hitmap_change_for( map, 1ul << ( 2 * _WORD_POW - 2 ), BIT_SET );
+	hitmap_change_for( map, 1ul << ( 2 * _WORD_POW - 1 ), BIT_SET );
+	hitmap_change_for( map, 
+		( 1ul << ( 2 * _WORD_POW ) ) - 1,
 		BIT_SET
 	);
 
+	ck_assert_int_eq( hitmap_discover( map, 0, BIT_SET ), 0 );
+	ck_assert_int_eq( hitmap_discover( map, 1, BIT_SET ), 1 );
+	ck_assert_int_eq( hitmap_discover( map, 2, BIT_SET ), 3 );
+	ck_assert_int_eq( hitmap_discover( map, 5, BIT_SET ), 7 );
+	ck_assert_int_eq( hitmap_discover( map, 8, BIT_SET ), 15 );
+	ck_assert_int_eq( hitmap_discover( map, 19, BIT_SET ), 31 );
+	ck_assert_int_eq( hitmap_discover( map, 32, BIT_SET ), 33 );
+	ck_assert_int_eq( hitmap_discover( map, 34, BIT_SET ), 63 );
+	ck_assert_int_eq( hitmap_discover( map, 66, BIT_SET ), 127 );
 	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 0, BIT_SET ), 0
+		hitmap_discover( map, 150, BIT_SET ),
+		1ul << ( 2 * _WORD_POW - 2 )
 	);
 	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 1, BIT_SET ), 1
+		hitmap_discover( map, ( 1ul << ( 2 * _WORD_POW - 2 ) ) + 1, BIT_SET ),
+		1ul << ( 2 * _WORD_POW - 1 )
 	);
 	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 2, BIT_SET ), 3
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 5, BIT_SET ), 7
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 8, BIT_SET ), 15
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 19, BIT_SET ), 31
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 32, BIT_SET ), 33
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 34, BIT_SET ), 63
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 66, BIT_SET ), 127
-	);
-	ck_assert_int_eq(
-		hitmap_discover( map, _WORD_POW + 3, 150, BIT_SET ),
-		( 1ul << ( _WORD_POW + 3 ) ) - 1
+		hitmap_discover( map, ( 1ul << ( 2 * _WORD_POW - 1 ) ) + 1, BIT_SET ),
+		( 1ul << ( 2 * _WORD_POW ) ) - 1
 	);
 
+	// test for 0 layer + 1 layer with 2 words
+	hitmap_init( map, 2 * _WORD_POW + 1 );
+
+	ck_assert_int_eq(
+		hitmap_discover( map, 0, BIT_SET ), SIZE_MAX
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map,
+			( 1ul << ( 2 * _WORD_POW ) ) - 1,
+			BIT_SET
+		),
+		SIZE_MAX
+	);
+
+	ck_assert_int_eq( hitmap_discover( map, 0, BIT_UNSET ), 0 );
+	ck_assert_int_eq(
+		hitmap_discover( map,
+			( 1ul << ( 2 * _WORD_POW ) ) - 1,
+			BIT_UNSET
+		),
+		( 1ul << ( 2 * _WORD_POW ) ) - 1
+	);
+
+	for( size_t cyc = 0; cyc < ( 1ul << ( 2 * _WORD_POW + 1 ) ); ++cyc ) {
+		hitmap_change_for( map, cyc, BIT_SET );
+		ck_assert_int_eq(
+			hitmap_discover( map, 0, BIT_SET ),
+			cyc
+		);
+		hitmap_change_for( map, cyc, BIT_UNSET );
+	}
+
+	hitmap_change_for( map, 0, BIT_SET );
+	hitmap_change_for( map, 15, BIT_SET );
+	hitmap_change_for( map, 63, BIT_SET );
+	hitmap_change_for( map, 127, BIT_SET );
+	hitmap_change_for( map, 1ul << ( 2 * _WORD_POW - 1 ), BIT_SET );
+	hitmap_change_for( map, 1ul << ( 2 * _WORD_POW ), BIT_SET );
+	hitmap_change_for( map,
+		( 1ul << ( 2 * _WORD_POW + 1 ) ) - 1,
+		BIT_SET
+	);
+
+	ck_assert_int_eq( hitmap_discover( map, 0, BIT_SET ), 0 );
+	ck_assert_int_eq( hitmap_discover( map, 8, BIT_SET ), 15 );
+	ck_assert_int_eq( hitmap_discover( map, 34, BIT_SET ), 63 );
+	ck_assert_int_eq( hitmap_discover( map, 66, BIT_SET ), 127 );
+	ck_assert_int_eq(
+		hitmap_discover( map, 150, BIT_SET ),
+		1ul << ( 2 * _WORD_POW - 1 )
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map, ( 1ul << ( 2 * _WORD_POW - 1 ) ) + 1, BIT_SET ),
+		1ul << ( 2 * _WORD_POW )
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map, ( 1ul << ( 2 * _WORD_POW ) ) + 1, BIT_SET ),
+		( 1ul << ( 2 * _WORD_POW + 1 ) ) - 1
+	);
+
+	// 2 layers + 1 layer with 4 words + 1 layer with one word
+	hitmap_init( map, 3 * _WORD_POW + 3 );
+
+	ck_assert_int_eq(
+		hitmap_discover( map, 0, BIT_SET ), SIZE_MAX
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map,
+			( 1ul << ( 3 * _WORD_POW + 2 ) ) - 1,
+			BIT_SET
+		),
+		SIZE_MAX
+	);
+
+	ck_assert_int_eq( hitmap_discover( map, 0, BIT_UNSET ), 0 );
+	ck_assert_int_eq(
+		hitmap_discover( map,
+			( 1ul << ( 3 * _WORD_POW + 2 ) ) - 1,
+			BIT_UNSET
+		),
+		( 1ul << ( 3 * _WORD_POW + 2 ) ) - 1
+	);
+
+	hitmap_change_for( map, 32768, BIT_SET );
+	ck_assert_int_eq(
+		hitmap_discover( map, 0, BIT_SET ),
+		32768
+	);
+	hitmap_change_for( map, 32768, BIT_UNSET );
+
+	struct tms tprev;
+	times( &tprev );
+	for( size_t cyc = 0; cyc < ( 1ul << ( 3 * _WORD_POW + 3 ) ); ++cyc ) {
+		hitmap_change_for( map, cyc, BIT_SET );
+		ck_assert_int_eq(
+			hitmap_discover( map, 0, BIT_SET ),
+			cyc
+		);
+		hitmap_change_for( map, cyc, BIT_UNSET );
+	}
+	struct tms tnow;
+	times( &tnow );
+	printf( "Hitmap time: %d\n", tnow.tms_utime - tprev.tms_utime );
+
+	AO_t *dummy_map = malloc(
+		( 1ul << ( 2 * _WORD_POW + 3 ) ) * sizeof( AO_t )
+	);
+	times( &tprev );
+	for( size_t cyc = 0; cyc < ( 1ul << ( 3 * _WORD_POW + 3 ) ); ++cyc ) {
+		dummy_change_for( dummy_map,
+			3 * _WORD_POW + 3,
+			cyc,
+			BIT_SET
+		);
+		ck_assert_int_eq(
+			dummy_discover( dummy_map,
+				3 * _WORD_POW + 3,
+				0,
+				BIT_SET
+			),
+			cyc
+		);
+		dummy_change_for( dummy_map,
+			3 * _WORD_POW + 3,
+			cyc,
+			BIT_UNSET
+		);
+	}
+	times( &tnow );
+	free( dummy_map );
+	printf( "Dummy map time: %d\n", tnow.tms_utime - tprev.tms_utime );
+
+	/*hitmap_change_for( map, 0, BIT_SET );
+	hitmap_change_for( map, 15, BIT_SET );
+	hitmap_change_for( map, ( 1ul << _WORD_POW ) + 1, BIT_SET );
+	hitmap_change_for( map, 1ul << ( _WORD_POW + 1 ), BIT_SET );
+	hitmap_change_for( map, 1ul << ( _WORD_POW + 2 ), BIT_SET );
+	hitmap_change_for( map, ( 1ul << ( 2 * _WORD_POW ) ) + 1 , BIT_SET );
+	hitmap_change_for( map,
+		( 1ul << ( 3 * _WORD_POW + 3 ) ) - 1,
+		BIT_SET
+	);
+
+	ck_assert_int_eq( hitmap_discover( map, 0, BIT_SET ), 0 );
+	ck_assert_int_eq( hitmap_discover( map, 1, BIT_SET ), 15 );
+	ck_assert_int_eq(
+		hitmap_discover( map, 16, BIT_SET ),
+		( 1ul << _WORD_POW ) + 1
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map, ( 1ul << _WORD_POW ) + 1, BIT_SET ),
+		1ul << ( _WORD_POW + 1 )
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map, ( 1ul << ( _WORD_POW + 1 ) ) + 1, BIT_SET ),
+		1ul << ( _WORD_POW + 2 )
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map, ( 1ul << ( _WORD_POW + 2 ) ) + 1, BIT_SET ),
+		( 1ul << ( 2 * _WORD_POW ) ) + 1
+	);
+	ck_assert_int_eq(
+		hitmap_discover( map, ( 1ul << ( 2 * _WORD_POW ) ) + 2, BIT_SET ),
+		( 1ul << ( 3 * _WORD_POW + 3 ) ) - 1
+	);
 	for( size_t cyc = 0; cyc < ( 1ul << ( _WORD_POW + 3 ) ); ++cyc )
 		hitmap_change_for( map, cyc, BIT_SET );
 
@@ -586,12 +807,12 @@ START_TEST( test_discover_normal )
 	ck_assert_int_eq(
 		hitmap_discover( map, _WORD_POW + 3, 150, BIT_UNSET ),
 		( 1ul << ( _WORD_POW + 3 ) ) - 1
-	);
+	);*/
 
 	free( map );
 }
 END_TEST
-
+/*
 START_TEST( test_calc_sz_border )
 {
 	ck_assert_int_eq( hitmap_calc_sz( 1 ), sizeof( map_t ) + sizeof( AO_t ) );
@@ -691,7 +912,7 @@ Suite *hitmap_suite( void ) {
 	tcase_add_test( tc_basic, test_init_normal );
 	tcase_add_test( tc_basic, test_change_for_normal );
 	//tcase_add_test( tc_basic, test_has_normal );
-	//tcase_add_test( tc_basic, test_discover_normal );
+	tcase_add_test( tc_basic, test_discover_normal );
 	
 	TCase *tc_border = tcase_create( "Border" );
 	//tcase_add_test( tc_border, test_init_border );
