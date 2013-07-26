@@ -7,6 +7,82 @@
 #include <stdint.h>
 #include <assert.h>
 
+#if defined( __GNUC__ ) && !defined( __INTEL_COMPILER )
+	#define ffsl __builtin_ffsl
+#endif
+
+#define _BIT_NUMBER_MASK ( HITMAP_INITIAL_SIZE - 1 )
+
+size_t dummy_calc_sz( int len_pow ) {
+	return ( sizeof( map_t ) +
+		( 1ul << ( len_pow - _WORD_POW ) ) * sizeof( AO_t )
+	);
+}
+
+void dummy_init( map_t *map, int len_pow ) {
+	if( len_pow < _WORD_POW )
+		len_pow = _WORD_POW;
+
+	map->len_pow = len_pow;
+
+	memset( map->bits, 0, sizeof( AO_t ) * ( 1ul << ( len_pow - _WORD_POW ) ) );
+}
+
+void dummy_change_for( map_t *map,
+	size_t idx,
+	enum hitmap_mark is_put
+) {
+	assert( map != NULL );
+	assert( ( is_put == BIT_SET ) || ( is_put == BIT_UNSET ) );
+	assert( idx < ( 1ul << map->len_pow ) );
+	
+	switch( is_put ) {
+		case BIT_SET:
+			map->bits[ idx >> _WORD_POW ] |= 1ul << ( idx & _BIT_NUMBER_MASK );
+			break;
+		case BIT_UNSET:
+			map->bits[ idx >> _WORD_POW ] &=
+				~ ( 1ul << ( idx & _BIT_NUMBER_MASK ) );
+			break;
+	}
+}
+
+size_t dummy_discover( map_t *map,
+	size_t start_idx,
+	enum hitmap_mark which
+) {
+	assert( map != NULL );
+	assert( ( which == BIT_SET ) || ( which == BIT_UNSET ) );
+	assert( start_idx < ( 1ul << map->len_pow ) );
+
+	size_t wcapacity = 1ul << ( map->len_pow - _WORD_POW );
+	size_t bitn = 0;
+	switch( which ) {
+		case BIT_SET:
+			for( size_t cyc = start_idx >> _WORD_POW;
+				cyc < wcapacity;
+				++cyc
+			) {
+				bitn = ( size_t ) ffsl( AO_load( map->bits + cyc ) );
+				if( bitn != 0 )
+					return ( cyc << _WORD_POW ) | ( bitn - 1 );
+			}
+			break;
+		case BIT_UNSET:
+			for( size_t cyc = start_idx >> _WORD_POW;
+				cyc < wcapacity;
+				++cyc
+			) {
+				bitn = ffsl( ~ AO_load( map->bits + cyc ) );
+				if( bitn != 0 )
+					return ( cyc << _WORD_POW ) | ( bitn - 1 );
+			}
+			break;
+	}
+
+	return SIZE_MAX;
+}
+
 static size_t _calc_elements_num( int len_pow ) {
 	// everything wich is less than 1 << _WORD_POW
 	// will be put to just one word
@@ -54,8 +130,6 @@ void hitmap_init( map_t *map, int len_pow ) {
 		)
 			*cur = SIZE_MAX;
 }
-
-#define _BIT_NUMBER_MASK ( HITMAP_INITIAL_SIZE - 1 )
 
 static inline AO_t _group_mask_for_bit( int len_pow, size_t idx ) {
 	if( len_pow >= _WORD_POW )
@@ -121,17 +195,8 @@ void hitmap_change_for( map_t *map, size_t idx, enum hitmap_mark is_put ) {
 }
 
 inline static size_t _ffsl_after( AO_t mword, size_t idx ) {
-	if( mword == 0 )
-		return 0;
-
-	#if defined( __GNUC__ ) && !defined( __INTEL_COMPILER )
-		int ret = __builtin_ffsl( mword >> idx );
-	#else
-		int ret = ffsl( mword >> idx );
-	#endif
-	
-	if( ret )
-		return ( idx + ret );
+	if( mword >>= idx )
+		return ( idx + ffsl( mword ) );
 	else
 		return 0;
 
@@ -147,7 +212,7 @@ inline static size_t _get_bit_number( AO_t *level_border,
 	enum hitmap_mark which
 ) {
 	return _ffsl_after(
-		AO_load( &( level_border[ ( idx >> ( _WORD_POW - 1 ) ) + which ] ) ),
+		AO_load( level_border + ( ( idx >> _WORD_POW ) << 1 ) + which ),
 		idx & _BIT_NUMBER_MASK
 	);
 }
@@ -209,11 +274,6 @@ static int _map_sink( AO_t **level_borderp,
 	enum hitmap_mark which
 ) {
 	int cur_pow = *cur_powp;
-	
-	if( ( cur_pow + _WORD_POW ) >= len_pow ) {
-		*idxp <<= len_pow - cur_pow;
-		return 1;
-	}
 
 	AO_t *level_border = *level_borderp - ( 1ul << ( cur_pow + 1 ) );
 	size_t idx = *idxp << ( ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow );
@@ -240,37 +300,22 @@ static int _map_sink( AO_t **level_borderp,
 	return 1;
 }
 
-enum _scan_result {
-	SCAN_NOT_FOUND,
-	SCAN_FOUND,
-	SCAN_NEXT
-};
+static inline AO_t _load_word( map_t *map , size_t idx ) {
+	return AO_load( map->bits + ( idx >> _WORD_POW ) );
+}
 
-static inline enum _scan_result _scan_0_level( map_t *map,
-	size_t *idxp,
+static inline size_t _scan_0_level( map_t *map,
+	size_t idx,
 	enum hitmap_mark which
 ) {
-	size_t idx = *idxp;
-	AO_t mword = AO_load( &( map->bits[ idx >> _WORD_POW ] ) );
 	size_t bitn = ( which == BIT_SET ) ?
-		_ffsl_after( mword, idx & _BIT_NUMBER_MASK ) :
-		_ffcl_after( mword, idx & _BIT_NUMBER_MASK );
-
+		_ffsl_after( _load_word( map, idx ), idx & _BIT_NUMBER_MASK ) :
+		_ffcl_after( _load_word( map, idx ), idx & _BIT_NUMBER_MASK );
 	idx &= ~ _BIT_NUMBER_MASK;
+	if( bitn != 0 )
+		return ( idx | ( bitn - 1 ) );
 
-	if( bitn != 0 ) {
-		*idxp = idx | ( bitn - 1 );
-		return SCAN_FOUND;
-	}
-
-	idx += HITMAP_INITIAL_SIZE;
-
-	if( idx >= ( 1ul << map->len_pow )  )
-		return SCAN_NOT_FOUND;
-
-	*idxp = idx;
-
-	return SCAN_NEXT;
+	return SIZE_MAX;
 }
 
 size_t hitmap_discover( map_t *map,
@@ -280,21 +325,19 @@ size_t hitmap_discover( map_t *map,
 	assert( map != NULL );
 	assert( start_idx < ( 1ul << map->len_pow ) );
 
-	switch( _scan_0_level( map, &start_idx, which ) ) {
-		case SCAN_FOUND:
-			return start_idx;
-		case SCAN_NOT_FOUND:
-			return SIZE_MAX;
-		default:
-			break;
-	}
+	size_t new_idx = _scan_0_level( map, start_idx, which );
+	if( new_idx != SIZE_MAX )
+		return new_idx;
+
+	start_idx += HITMAP_INITIAL_SIZE;
+	if( start_idx >= ( 1ul << map->len_pow )  )
+		return SIZE_MAX;
 
 	int cur_pow = map->len_pow - _WORD_POW;
 	if( cur_pow < 2 ) {
-		AO_t mword = AO_load( &( map->bits[ start_idx >> _WORD_POW ] ) );
 		size_t bitn = ( which == BIT_SET ) ?
-			_ffsl_after( mword, 0 ) :
-			_ffcl_after( mword, 0 );
+			ffsl( _load_word( map, start_idx ) ) :
+			ffsl( ~ _load_word( map, start_idx ) );
 
 		if( bitn != 0 )
 			return start_idx | ( bitn - 1 );
@@ -312,20 +355,26 @@ size_t hitmap_discover( map_t *map,
 					&level_border, &cur_pow, &start_idx, which
 				) )
 					return SIZE_MAX;
+
+				if( ( cur_pow + _WORD_POW ) >= map->len_pow ) {
+					start_idx <<= ( cur_pow < _WORD_POW ) ? cur_pow : _WORD_POW;
+					break;
+				}
 			} while(
 				! _map_sink(
 					&level_border, map->len_pow, &cur_pow, &start_idx, which
 				)
 			);
 
-			switch( _scan_0_level( map, &start_idx, which ) ) {
-				case SCAN_FOUND:
-					return start_idx;
-				case SCAN_NOT_FOUND:
-					return SIZE_MAX;
-				default:
-					break;
-			}
+			if(
+				( new_idx = _scan_0_level( map, start_idx, which ) ) !=
+				SIZE_MAX
+			)
+				return new_idx;
+
+			start_idx += HITMAP_INITIAL_SIZE;
+			if( start_idx >= ( 1ul << map->len_pow )  )
+				return SIZE_MAX;
 
 			cur_pow = initial_cur_pow;
 			level_border = initial_level_border;

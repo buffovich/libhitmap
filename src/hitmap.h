@@ -144,4 +144,18 @@ extern size_t hitmap_discover( map_t *map,
  */
 extern int hitmap_has( AO_t map[], int len_pow, enum hitmap_mark which );
 
+extern size_t dummy_calc_sz( int len_pow );
+
+extern void dummy_init( map_t *map, int len_pow );
+
+extern void dummy_change_for( map_t *map,
+	size_t idx,
+	enum hitmap_mark is_put
+);
+
+extern size_t dummy_discover( map_t *map,
+	size_t start_idx,
+	enum hitmap_mark which
+);
+
 #endif
