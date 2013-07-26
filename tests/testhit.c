@@ -845,6 +845,7 @@ Suite *hitmap_suite( void ) {
 	tcase_add_test( tc_basic, test_change_for_normal );
 	//tcase_add_test( tc_basic, test_has_normal );
 	tcase_add_test( tc_basic, test_discover_normal );
+	tcase_set_timeout( tc_basic, 0 );
 	
 	TCase *tc_border = tcase_create( "Border" );
 	//tcase_add_test( tc_border, test_init_border );
