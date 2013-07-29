@@ -40,6 +40,7 @@
 
 #include <atomic_ops.h>
 #include <limits.h>
+#include <string.h>
 
 /**
  * Number of bits in minimal map.
@@ -51,6 +52,9 @@
 #else
 	#define _WORD_POW ( 5 )
 #endif
+
+#define _DUMMY_THRESHOLD_POW ( _WORD_POW + 3 )
+#define _DUMMY_THRESHOLD ( 1ul << _DUMMY_THRESHOLD_POW )
 
 typedef struct {
 	int len_pow;
@@ -67,6 +71,8 @@ enum hitmap_mark {
 	BIT_SET = 0 /*!< Search for set position or make position set. */
 };
 
+extern size_t _hitmap_calc_elements_num( int len_pow );
+
 /**
  * Calculates size of bitmap in bytes.
  * 
@@ -78,7 +84,17 @@ enum hitmap_mark {
  * @return number of AO_t should be allocated for map with requested length
  * @see hitmap_init
  */
-extern size_t hitmap_calc_sz( int len_pow );
+static inline size_t hitmap_calc_sz( int len_pow ) {
+	return ( sizeof( map_t ) +
+		(
+			( len_pow < _DUMMY_THRESHOLD_POW ) ?
+				( 1ul << ( len_pow - _WORD_POW ) ) :
+				_hitmap_calc_elements_num( len_pow )
+		) * sizeof( AO_t )
+	);
+}
+
+extern void _hitmap_init( map_t *map, int len_pow );
 
 /**
  * Initializes allocated map for further use.
@@ -94,7 +110,30 @@ extern size_t hitmap_calc_sz( int len_pow );
  * @param len_pow binary logarithm derived from requested number of bits
  * @see hitmap_calc_sz
  */
-extern void hitmap_init( map_t *map, int len_pow );
+static inline void hitmap_init( map_t *map, int len_pow ) {
+	if( len_pow < _WORD_POW )
+		len_pow = _WORD_POW;
+
+	map->len_pow = len_pow;
+
+	if ( len_pow < _DUMMY_THRESHOLD_POW )
+		memset( map->bits,
+			0,
+			sizeof( AO_t ) * ( 1ul << ( len_pow - _WORD_POW ) )
+		);
+	else
+		_hitmap_init( map, len_pow );
+}
+
+extern void _hitmap_change_for( map_t *map,
+	size_t idx,
+	enum hitmap_mark is_put
+);
+
+extern void _dummy_change_for( map_t *map,
+	size_t idx,
+	enum hitmap_mark is_put
+);
 
 /**
  * Sets or unsets bit with specified index.
@@ -107,9 +146,27 @@ extern void hitmap_init( map_t *map, int len_pow );
  * @param is_put operation selector (set/unset)
  * @see hitmap_discover
  */
-extern void hitmap_change_for( map_t *map,
+static inline void hitmap_change_for( map_t *map,
 	size_t idx,
 	enum hitmap_mark is_put
+) {
+	assert( map != NULL );
+	assert( idx < ( 1ul << map->len_pow ) );
+
+	if ( map->len_pow < _DUMMY_THRESHOLD_POW )
+		_dummy_change_for( map, idx, is_put );
+	else
+		_hitmap_change_for( map, idx, is_put );
+};
+
+extern size_t _hitmap_discover( map_t *map,
+	size_t start_idx,
+	enum hitmap_mark which
+);
+
+extern size_t _dummy_discover( map_t *map,
+	size_t start_idx,
+	enum hitmap_mark which
 );
 
 /**
@@ -125,10 +182,21 @@ extern void hitmap_change_for( map_t *map,
  * @see hitmap_change_for
  * @see hitmap_has
  */
-extern size_t hitmap_discover( map_t *map,
+inline static size_t hitmap_discover( map_t *map,
 	size_t start_idx,
 	enum hitmap_mark which
-);
+) {
+	assert( map != NULL );
+	assert( start_idx < ( 1ul << map->len_pow ) );
+
+	return ( ( ( 1ul << map->len_pow ) - start_idx ) < _DUMMY_THRESHOLD ) ?
+		_dummy_discover( map, start_idx, which ) :
+		_hitmap_discover( map, start_idx, which );
+}
+
+extern int _dummy_has( map_t *map, enum hitmap_mark which );
+
+extern int _hitmap_has( map_t *map, enum hitmap_mark which );
 
 /**
  * Tests if specified map has set/unset positions.
@@ -142,20 +210,12 @@ extern size_t hitmap_discover( map_t *map,
  * @see hitmap_change_for
  * @see hitmap_discover
  */
-extern int hitmap_has( AO_t map[], int len_pow, enum hitmap_mark which );
+static inline int hitmap_has( map_t *map, enum hitmap_mark which ) {
+	assert( map != NULL );
 
-extern size_t dummy_calc_sz( int len_pow );
-
-extern void dummy_init( map_t *map, int len_pow );
-
-extern void dummy_change_for( map_t *map,
-	size_t idx,
-	enum hitmap_mark is_put
-);
-
-extern size_t dummy_discover( map_t *map,
-	size_t start_idx,
-	enum hitmap_mark which
-);
+	return ( map->len_pow < _DUMMY_THRESHOLD_POW ) ?
+		_dummy_has( map, which ) :
+		_hitmap_has( map, which );
+}
 
 #endif

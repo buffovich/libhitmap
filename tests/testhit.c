@@ -16,7 +16,7 @@ START_TEST( test_calc_sz_normal )
 	);
 	ck_assert_int_eq(
 		hitmap_calc_sz( _WORD_POW + 2 ),
-		sizeof( map_t ) + 6 * sizeof( AO_t )
+		sizeof( map_t ) + 4 * sizeof( AO_t )
 	);
 	ck_assert_int_eq(
 		hitmap_calc_sz( _WORD_POW + 3 ),
@@ -636,6 +636,14 @@ START_TEST( test_discover_normal )
 
 	for( int cyc = 3 * _WORD_POW + 3; cyc >= _WORD_POW; --cyc ) {
 		hitmap_init( map, cyc );
+		hitmap_change_for( map, 29, BIT_SET );
+		hitmap_change_for( map, 31, BIT_SET );
+		ck_assert_int_eq(
+			hitmap_discover( map, 30, BIT_SET ),
+			31
+		);
+		hitmap_change_for( map, 29, BIT_UNSET );
+		hitmap_change_for( map, 31, BIT_UNSET );
 		for( size_t cyc2 = 0; cyc2 < ( 1ul << cyc ); ++cyc2 ) {
 			hitmap_change_for( map, cyc2, BIT_SET );
 			ck_assert_int_eq(
@@ -656,7 +664,7 @@ START_TEST( test_discover_normal )
 		for( size_t cyc2 = 0; cyc2 < ( 1ul << cyc ); ++cyc2 ) {
 			hitmap_change_for( map, cyc2, BIT_UNSET );
 			ck_assert_int_eq(
-				hitmap_discover( map, 0, BIT_UNSET ),
+				_hitmap_discover( map, 0, BIT_UNSET ),
 				cyc2
 			);
 			hitmap_change_for( map, cyc2, BIT_SET );
