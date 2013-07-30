@@ -12,7 +12,8 @@
  * 
  * - compact view of boolean vector;
  * 
- *   You need only 88 bytes for 256 booleans.
+ *   You need only 32 bytes for 256 booleans and 136 bytes (on 32-bit) or
+ *   144 bytes (on 64-bit) for 1024 booleans representation.
  * 
  * - O( log2( n ) ) complexity of looking for the next set/unset bit index;
  * - O( 1 ) complexity of defining if map has set/unset bits;
@@ -58,6 +59,7 @@
 
 typedef struct {
 	int len_pow;
+	AO_t *bits_border;
 	AO_t bits[];
 } map_t;
 
@@ -87,8 +89,11 @@ extern size_t _hitmap_calc_elements_num( int len_pow );
 static inline size_t hitmap_calc_sz( int len_pow ) {
 	return ( sizeof( map_t ) +
 		(
-			( len_pow < _DUMMY_THRESHOLD_POW ) ?
-				( 1ul << ( len_pow - _WORD_POW ) ) :
+			( len_pow <= _DUMMY_THRESHOLD_POW ) ?
+				( 1ul << (
+						( len_pow > _WORD_POW ) ? ( len_pow - _WORD_POW ) : 0
+					)
+				) :
 				_hitmap_calc_elements_num( len_pow )
 		) * sizeof( AO_t )
 	);
@@ -116,12 +121,13 @@ static inline void hitmap_init( map_t *map, int len_pow ) {
 
 	map->len_pow = len_pow;
 
-	if ( len_pow < _DUMMY_THRESHOLD_POW )
+	if ( len_pow <= _DUMMY_THRESHOLD_POW ) {
+		map->bits_border = NULL;
 		memset( map->bits,
 			0,
 			sizeof( AO_t ) * ( 1ul << ( len_pow - _WORD_POW ) )
 		);
-	else
+	} else
 		_hitmap_init( map, len_pow );
 }
 
@@ -153,7 +159,7 @@ static inline void hitmap_change_for( map_t *map,
 	assert( map != NULL );
 	assert( idx < ( 1ul << map->len_pow ) );
 
-	if ( map->len_pow < _DUMMY_THRESHOLD_POW )
+	if ( map->len_pow <= _DUMMY_THRESHOLD_POW )
 		_dummy_change_for( map, idx, is_put );
 	else
 		_hitmap_change_for( map, idx, is_put );
@@ -189,7 +195,7 @@ inline static size_t hitmap_discover( map_t *map,
 	assert( map != NULL );
 	assert( start_idx < ( 1ul << map->len_pow ) );
 
-	return ( ( ( 1ul << map->len_pow ) - start_idx ) < _DUMMY_THRESHOLD ) ?
+	return ( ( ( 1ul << map->len_pow ) - start_idx ) <= _DUMMY_THRESHOLD ) ?
 		_dummy_discover( map, start_idx, which ) :
 		_hitmap_discover( map, start_idx, which );
 }
@@ -213,7 +219,7 @@ extern int _hitmap_has( map_t *map, enum hitmap_mark which );
 static inline int hitmap_has( map_t *map, enum hitmap_mark which ) {
 	assert( map != NULL );
 
-	return ( map->len_pow < _DUMMY_THRESHOLD_POW ) ?
+	return ( map->len_pow <= _DUMMY_THRESHOLD_POW ) ?
 		_dummy_has( map, which ) :
 		_hitmap_has( map, which );
 }

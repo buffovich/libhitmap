@@ -19,8 +19,8 @@ LINKFLAGS		+= -s
 endif
 
 ifdef COVERAGE
-FLAGS			+= -fprofile-arcs -ftest-coverage -pg
-LINKFLAGS		+= -fprofile-arcs -ftest-coverage -pg
+FLAGS			+= -fprofile-arcs -ftest-coverage
+LINKFLAGS		+= -fprofile-arcs -ftest-coverage
 endif
 
 LIBFLAGS		= -fPIC $(FLAGS)

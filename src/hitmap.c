@@ -69,16 +69,7 @@ size_t _dummy_discover( map_t *map,
 }
 
 size_t _hitmap_calc_elements_num( int len_pow ) {
-	// everything wich is less than 1 << _WORD_POW
-	// will be put to just one word
-	if( len_pow <= _WORD_POW )
-		return 1;
-
 	len_pow -= _WORD_POW;
-	// we don't need layered structure for less than 4 words
-	if( len_pow < 2 )
-		return 2;
-
 	size_t sz = 1ul << len_pow;
 	while( len_pow > _WORD_POW ) {
 		len_pow -= _WORD_POW;
@@ -93,6 +84,7 @@ size_t _hitmap_calc_elements_num( int len_pow ) {
 
 void _hitmap_init( map_t *map, int len_pow ) {
 	size_t el_num = _hitmap_calc_elements_num( len_pow );
+	map->bits_border = map->bits + el_num;
 	memset( map->bits, 0, el_num * sizeof( AO_t ) );
 
 	len_pow -= _WORD_POW;
@@ -303,50 +295,39 @@ size_t _hitmap_discover( map_t *map,
 		return SIZE_MAX;
 
 	int cur_pow = map->len_pow - _WORD_POW;
-	if( cur_pow < 2 ) {
-		size_t bitn = ( which == BIT_SET ) ?
-			ffsl( __load_word( map, start_idx ) ) :
-			ffsl( ~ __load_word( map, start_idx ) );
-
-		if( bitn != 0 )
-			return start_idx | ( bitn - 1 );
-		else
-			return SIZE_MAX;
-	} else {
-		AO_t *level_border = map->bits + ( 1ul << cur_pow );
-		start_idx >>= ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
-		int initial_cur_pow = cur_pow;
-		while( 1 ) {
-			do{
-				if( ! __map_bob_up(
-					&level_border, &cur_pow, &start_idx, which
-				) )
-					return SIZE_MAX;
-
-				if( ( cur_pow + _WORD_POW ) >= map->len_pow ) {
-					start_idx <<= ( cur_pow < _WORD_POW ) ? cur_pow : _WORD_POW;
-					break;
-				}
-			} while(
-				! __map_sink(
-					&level_border, map->len_pow, &cur_pow, &start_idx, which
-				)
-			);
-
-			if(
-				( new_idx = __scan_0_level( map, start_idx, which ) ) !=
-				SIZE_MAX
-			)
-				return new_idx;
-
-			start_idx += HITMAP_INITIAL_SIZE;
-			if( start_idx >= ( 1ul << map->len_pow )  )
+	AO_t *level_border = map->bits + ( 1ul << cur_pow );
+	start_idx >>= ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
+	int initial_cur_pow = cur_pow;
+	while( 1 ) {
+		do{
+			if( ! __map_bob_up(
+				&level_border, &cur_pow, &start_idx, which
+			) )
 				return SIZE_MAX;
 
-			cur_pow = initial_cur_pow;
-			level_border = map->bits + ( 1ul << cur_pow );
-			start_idx >>= ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
-		}
+			if( ( cur_pow + _WORD_POW ) >= map->len_pow ) {
+				start_idx <<= ( cur_pow < _WORD_POW ) ? cur_pow : _WORD_POW;
+				break;
+			}
+		} while(
+			! __map_sink(
+				&level_border, map->len_pow, &cur_pow, &start_idx, which
+			)
+		);
+
+		if(
+			( new_idx = __scan_0_level( map, start_idx, which ) ) !=
+			SIZE_MAX
+		)
+			return new_idx;
+
+		start_idx += HITMAP_INITIAL_SIZE;
+		if( start_idx >= ( 1ul << map->len_pow )  )
+			return SIZE_MAX;
+
+		cur_pow = initial_cur_pow;
+		level_border = map->bits + ( 1ul << cur_pow );
+		start_idx >>= ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
 	}
 
 	return SIZE_MAX;
@@ -373,13 +354,12 @@ int _dummy_has( map_t *map, enum hitmap_mark which ) {
 
 int _hitmap_has( map_t *map, enum hitmap_mark which ) {
 	size_t shift = ( ( map->len_pow % _WORD_POW ) == 1 ) ? 2 : 1;
-	size_t top_idx = _hitmap_calc_elements_num( map->len_pow ) - ( shift * 2 );
 
-	if( AO_load( map->bits + top_idx + which ) != 0 )
+	if( AO_load( map->bits_border - ( shift * 2 ) + which ) != 0 )
 		return 1;
 	else {
 		if( shift > 1 )
-			return ( AO_load( map->bits + top_idx + 2 + which ) != 0 );
+			return ( AO_load( map->bits_border - 2 + which ) != 0 );
 	}
 
 	return 0;
