@@ -49,6 +49,13 @@ test : build_dynamic $(tests)
 	cd tests; \
 	./test.* ;
 
+memcheck : build_dynamic $(tests)
+	export LD_LIBRARY_PATH=..; \
+	cd tests; \
+	for F in test.*; do \
+		valgrind --tool=memcheck --trace-children=yes --log-file=./$$F.memcheck --leak-check=full ./$$F; \
+	done;
+
 coverage : FORCE
 	make test COVERAGE=1; \
 	lcov --capture --directory . --output-file cov/$(LIBNAME).info; \
@@ -57,7 +64,9 @@ coverage : FORCE
 benchmark : build_static $(benchmarks)
 	export LD_LIBRARY_PATH=../; \
 	cd benchmarks; \
-	./bench.* ;
+	for F in bench.*; do \
+		valgrind --tool=callgrind --branch-sim=yes --cache-sim=yes --simulate-hwpref=yes --cacheuse=yes ./$$F; \
+	done;
 
 src/dynamic_%.o : $(ROOT)/src/%.c
 	cd src; \
