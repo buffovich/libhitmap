@@ -65,7 +65,7 @@ benchmark : build_static $(benchmarks)
 	export LD_LIBRARY_PATH=../; \
 	cd benchmarks; \
 	for F in bench.*; do \
-		valgrind --tool=callgrind --branch-sim=yes --cache-sim=yes --simulate-hwpref=yes --cacheuse=yes ./$$F; \
+		valgrind --tool=callgrind --branch-sim=yes --cache-sim=yes --simulate-hwpref=yes --cacheuse=yes --callgrind-out-file=./$$F.callgrind ./$$F; \
 	done;
 
 src/dynamic_%.o : $(ROOT)/src/%.c
@@ -96,6 +96,8 @@ clean : FORCE
 	rm -f `find . -name '*.gcda'`; \
 	rm -f `find . -name '*.gcno'`; \
 	rm -rf ./cov/* ; \
-	rm -rf ./doc/* ;
+	rm -rf ./doc/html ; \
+	rm -rf ./tests/*.memcheck; \
+	rm -rf ./benchmarks/*.callgrind.*
 
 FORCE :

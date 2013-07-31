@@ -1,6 +1,7 @@
 #include <hitmap.h>
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
 #include <atomic_ops.h>
@@ -44,6 +45,7 @@ int main( void ) {
 	
 	hitmap_init( hitmap, 3 * _WORD_POW + 3 );
 
+	CALLGRIND_START_INSTRUMENTATION;
 	char id[ 10 ];
 	for( size_t idx = 0;
 		idx < 6000;
@@ -60,9 +62,10 @@ int main( void ) {
 		assert( _hitmap_discover( hitmap, 0, BIT_SET ) == idx );
 		hitmap_change_for( hitmap, idx, BIT_UNSET );
 
-		snprintf( id, 9, "%lu", idx );
+		snprintf( id, 9, "%lu", ( long unsigned int ) idx );
 		CALLGRIND_DUMP_STATS_AT( id );
 	}
+	CALLGRIND_STOP_INSTRUMENTATION;
 
 	free( dummy_map );
 	free( hitmap );
