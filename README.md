@@ -19,7 +19,7 @@ an user with:
    employed appropriatelly;
  - code is covered with unit tests and benchmarking snippets.
 
- However, hitmap has some limitations:
+However, hitmap has some limitations:
  
  - O( log32( n ) )/O( log64( n ) ) for bit setting/unsetting as well;
  - constant factors comparing with simple straightforward implementation
