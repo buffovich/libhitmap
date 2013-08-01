@@ -2,7 +2,7 @@ ROOT	:= $(abspath .)
 
 libdirs_	= /usr/lib
 libs_		=
-include_ 	= /usr/include $(ROOT)/src
+include_ 	= /usr/include $(ROOT)/src $(ROOT)/atomic_ops
 
 LIBNAME			= hitmap
 CC				?= gcc

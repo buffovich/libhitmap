@@ -1,0 +1,3 @@
+[submodule "atomic_ops"]
+	path = atomic_ops
+	url = https://github.com/ivmai/libatomic_ops.git

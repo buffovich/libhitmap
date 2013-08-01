@@ -49,7 +49,8 @@ Installation
 
 Just to build the library you need:
  - GNU make;
- - GCC toolset. 
+ - GCC toolset;
+ - [atomic_ops](https://github.com/ivmai/libatomic_ops) library 
 
 Firtsly, check-out/clone repository into build environment:
 
