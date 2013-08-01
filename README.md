@@ -70,6 +70,12 @@ If you need debug version of library, please run following:
 
 `> make build DEBUG=3`
 
+If you need documentation, you will need
+[Doxygen](http://www.stack.nl/~dimitri/doxygen/). If you got it, do the
+following:
+
+`> make doc`
+
 To run unit-tests, you need installed [check](http://check.sourceforge.net/)
 library:
 
@@ -83,6 +89,8 @@ rebuild library if it has been built already:
 `> make clean`
 
 `> make coverage`
+
+Coverage results in form of HTML content will be placed into ./cov directory.
 
 (Linux only) To see run of unit-test with memory checking, you will need
 Valgrind in addition to "check". Just run following:
