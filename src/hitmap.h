@@ -179,8 +179,9 @@
  */
 typedef struct {
 	int len_pow; /*!< Logarithm base 2 from the logic capacity of map.*/
-	AO_t *bits_border; /*!< Pointer to the last word of bits[] array.
-							Needed for optimization purposes in hitmap_has.*/
+	AO_t *bits_border; /*!< Pointer to the word after the last word of bits[]
+							array. Needed for optimization purposes in
+							hitmap_has.*/
 	AO_t bits[]; /*!< Map data.*/
 } map_t;
 
