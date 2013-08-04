@@ -209,6 +209,19 @@ enum hitmap_mark {
 extern size_t _hitmap_calc_elements_num( int len_pow );
 
 /**
+ * @internal
+ *
+ * Calculates particular power of 2.
+ * 
+ * Simple ancillary function servicing frequent need to calculate power of 2.
+ * @param pow power which 2 should be raised
+ * @return power of 2 number
+ */
+static inline unsigned long int _pow2( int pow ) {
+	return ( 1ul << pow );
+}
+
+/**
  * Calculates size of hitmap in bytes.
  * 
  * Calculates actual size of map_t structure in bytes from given
@@ -223,10 +236,7 @@ static inline size_t hitmap_calc_sz( int len_pow ) {
 	return ( sizeof( map_t ) +
 		(
 			( len_pow <= _DUMMY_THRESHOLD_POW ) ?
-				( 1ul << (
-						( len_pow > _WORD_POW ) ? ( len_pow - _WORD_POW ) : 0
-					)
-				) :
+				_pow2( ( len_pow > _WORD_POW ) ? ( len_pow - _WORD_POW ) : 0 ) :
 				_hitmap_calc_elements_num( len_pow )
 		) * sizeof( AO_t )
 	);
@@ -269,7 +279,7 @@ static inline void hitmap_init( map_t *map, int len_pow ) {
 		map->bits_border = NULL;
 		memset( map->bits,
 			0,
-			sizeof( AO_t ) * ( 1ul << ( len_pow - _WORD_POW ) )
+			sizeof( AO_t ) * _pow2( len_pow - _WORD_POW )
 		);
 	} else
 		_hitmap_init( map, len_pow );
@@ -325,7 +335,7 @@ static inline void hitmap_change_for( map_t *map,
 	enum hitmap_mark is_put
 ) {
 	assert( map != NULL );
-	assert( idx < ( 1ul << map->len_pow ) );
+	assert( idx < _pow2( map->len_pow ) );
 
 	if ( map->len_pow <= _DUMMY_THRESHOLD_POW )
 		_dummy_change_for( map, idx, is_put );
@@ -387,11 +397,11 @@ inline static size_t hitmap_discover( map_t *map,
 	enum hitmap_mark which
 ) {
 	assert( map != NULL );
-	assert( start_idx < ( 1ul << map->len_pow ) );
+	assert( start_idx < _pow2( map->len_pow ) );
 
 	// if distance between current position and the end of map is less than
 	// threshold then simple linear scan is employed
-	return ( ( ( 1ul << map->len_pow ) - start_idx ) <= _DUMMY_THRESHOLD ) ?
+	return ( ( _pow2( map->len_pow ) - start_idx ) <= _DUMMY_THRESHOLD ) ?
 		_dummy_discover( map, start_idx, which ) :
 		_hitmap_discover( map, start_idx, which );
 }

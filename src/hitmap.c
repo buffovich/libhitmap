@@ -76,7 +76,7 @@ size_t _dummy_discover( map_t *map,
 	enum hitmap_mark which
 ) {
 	
-	size_t wcapacity = 1ul << ( map->len_pow - _WORD_POW ),
+	size_t wcapacity = _pow2( map->len_pow - _WORD_POW ),
 		bitn = 0,
 		/* shifting gives us index of word in level 0*/
 		cyc = start_idx >> _WORD_POW;
@@ -119,13 +119,13 @@ size_t _dummy_discover( map_t *map,
 
 size_t _hitmap_calc_elements_num( int len_pow ) {
 	len_pow -= _WORD_POW; /* to find out level 0 size in words */
-	size_t sz = 1ul << len_pow;
+	size_t sz = _pow2( len_pow );
 	while( len_pow > _WORD_POW ) {
 		/* recall that bit at a higher level can represent
 		 * a region up to 32/64 bits at a lower level */
 		len_pow -= _WORD_POW;
 		/* +1 stands for negative word after each position word on levels > 0 */
-		sz += 1ul << ( len_pow + 1 );
+		sz += _pow2( len_pow + 1 );
 	}
 
 	/* if there are 4 or more pos-neg pairs at the highest level
@@ -144,7 +144,7 @@ void _hitmap_init( map_t *map, int len_pow ) {
 
 	len_pow -= _WORD_POW;
 	if( len_pow >= 2 )
-		for( AO_t *cur = map->bits + ( 1ul << len_pow ) + 1,
+		for( AO_t *cur = map->bits + _pow2( len_pow ) + 1,
 				*limit = map->bits + el_num;
 			cur < limit;
 			cur += 2
@@ -170,23 +170,17 @@ static inline AO_t __group_mask_for_bit( int len_pow, size_t idx ) {
 	if( len_pow >= _WORD_POW )
 		return SIZE_MAX;
 
-	return (
-			/* unshifted mask (we will have to place it to
-			 * the right region of word) */
-			( 1ul <<
-				( 1ul << len_pow ) /* number of bits represented by
-									a bit at higher level */
-			) - 1
-		) <<
-		(
-			/* calculating mask shift */
-			idx &
-				_BIT_NUMBER_MASK & /* extract bit number in word */
-				( /* we should quantize bit index with
-				   * granularity equal to number of lower bits per higher bit */
-					~ ( ( 1ul << len_pow ) - 1 )
-				) 
-		);
+	/* Let's consider each operationseparately:
+	 * lph = 2 ^ len_pow - number of lower bits per higher bit;
+	 * mask = ( 2 ^ ( lph ) - 1 ) - unshifted neighbor mask
+	 *   (we will have to place it to the right region of word with shift)
+	 * local_idx = idx & _BIT_NUMBER_MASK - index of bit in word which we are
+	 *   going to calculate neighbours mask
+	 * ~ ( lph - 1 ) - mask for common part on index number for all neighbour
+	 *   bits group
+	 */
+	return ( _pow2( _pow2( len_pow ) ) - 1 ) <<
+		( idx & _BIT_NUMBER_MASK & ( ~ ( _pow2( len_pow ) - 1 ) ) );
 }
 
 void _dummy_change_for( map_t *map,
@@ -195,78 +189,65 @@ void _dummy_change_for( map_t *map,
 ) {
 	switch( is_put ) {
 		case BIT_SET:
-			map->bits[
-				/* word index */
-				idx >> _WORD_POW
-			] |= 1ul << ( idx & _BIT_NUMBER_MASK /* bit index */ );
+			map->bits[ idx >> _WORD_POW ] |= _pow2( idx & _BIT_NUMBER_MASK );
 			break;
 		case BIT_UNSET:
-			map->bits[ idx >> _WORD_POW ] &=
-				~ ( 1ul << ( idx & _BIT_NUMBER_MASK ) );
+			map->bits[ idx >> _WORD_POW ] &= ~ _pow2( idx & _BIT_NUMBER_MASK );
 			break;
 	}
 }
 
 void _hitmap_change_for( map_t *map, size_t idx, enum hitmap_mark is_put ) {
+	/* modifying level 0 */
+	_dummy_change_for( map, idx, is_put );
+
 	size_t widx = idx >> _WORD_POW;
 	int len_pow = map->len_pow - _WORD_POW;
 
-	/* modifying level 0 */
-	switch( is_put ) {
-		case BIT_SET:
-			map->bits[ widx ] |= 1ul << ( idx & _BIT_NUMBER_MASK );
-			break;
-		case BIT_UNSET:
-			map->bits[ widx ] &= ~ ( 1ul << ( idx & _BIT_NUMBER_MASK ) );
-			break;
-	}
-
 	/* defining if there are no unset/set bits left
 	 * its needed for modifying negative/positive mask
-	 * depending on is_put operation selector*/
+	 * depending on is_put operation selector:
+	 *   - if all group neighbours are set then corresponding bit at negative
+	 *     mask of higher level should be unset
+	 *   - if all group neighbours are unset then corresponding bit at positive
+	 *     mask of higher level should be unset
+	 */
 	AO_t mask = __group_mask_for_bit( len_pow, idx );
 	int is_full = ( is_put == BIT_SET ) ?
-		(
-			/* if all group neighbours are set
-			 * then corresponding bit at negative mask
-			 * of higher level should be unset*/
-			( map->bits[ widx ] & mask ) == mask
-		) :
-		(
-			/* if all group neighbours are unset
-			 * then corresponding bit at positive mask
-			 * of higher level should be unset*/
-			( map->bits[ widx ] & mask ) == 0
-		);
+		( ( map->bits[ widx ] & mask ) == mask ) :
+		( ( map->bits[ widx ] & mask ) == 0 );
 	/* ******************************************* */
 
 	AO_t bit = 0;
-	AO_t *level_border = map->bits + ( 1ul << len_pow );
+	AO_t *level_border = map->bits + _pow2( len_pow );
 	while( len_pow > _WORD_POW ) {
 		len_pow -= _WORD_POW;
 		idx >>= _WORD_POW;
 		widx >>= _WORD_POW;
 
-		bit = 1ul << ( idx & _BIT_NUMBER_MASK );
+		bit = _pow2( idx & _BIT_NUMBER_MASK );
 		level_border[ ( widx << 1 ) + is_put ] |= bit;
 
+		/* If the group on the previous level are full (see comments for the
+		 * first occurence of is_full) then it's a sign that the group on the
+		 * current level is full as well.
+		 * 
+		 * The same opration as before but with taking in account the structure
+		 * of levels > 0.
+		 */
 		if( is_full )
 			is_full = (
-				(
-					/* the same opration as before but with
-					 * taking in account the structure of levels > 0 */
 					( level_border[ ( widx << 1 ) + 1 - is_put ] &= ~bit ) &
 					__group_mask_for_bit( len_pow, idx )
-				)
-			) == 0;
+				) == 0;
 
-		level_border += ( 1ul << len_pow ) << 1;
+		level_border += _pow2( len_pow + 1 );
 	}
 
 	if( len_pow >= 2 ) {
 		/* we have extra level because of threshold
 		 * number of words at the last level */
-		bit = 1ul << ( idx >> len_pow );
+		bit = _pow2( idx >> len_pow );
 		level_border[ is_put ] |= bit;
 
 		if( is_full )
@@ -303,12 +284,12 @@ inline static size_t __get_next_bit_index( AO_t *level_border,
  * First stage of the hitmap discover algorithm. To find something, we look at
  * the map from different heights up to the highest level.
  * @param level_borderp pointer to modifiable variable storing pointer to
- *                      current level of map; services for passing current level
+ *                      current level of map; serves for passing current level
  *                      between "bob up" and "sink" stages
  * @param cur_powp pointer to modifiable variable storing logarithm base 2 from
- *                 bit capacity of the current level; services the same purpose
+ *                 bit capacity of the current level; serves the same purpose
  * @param idxp pointer to modifiable variable storing bit index at the
- *             *level_borderp level; services the same purpose
+ *             *level_borderp level; serves the same purpose
  * @param which operation selector
  * @return == 1 if algorithm found desirable kind of bit at particular level
  *         == 0 otherwise (and there is no point to continue discover)
@@ -328,27 +309,30 @@ static int __map_bob_up( AO_t **level_borderp,
 		while( 1 ) {
 			bitn = __get_next_bit_index( level_border, idx, which );
 
-			if( bitn != 0 ) /* we found something! */
+			/* if we have found something then we exit bob_up stage */
+			if( bitn != 0 )
 				break;
 
 			/* no... let's continue stepping up */
 			/* since we scanned entire word we should move to the next word */
-			idx = (
-					/* global level index of the first bit at the current word */
-					idx & ( ~ _BIT_NUMBER_MASK )
-				) + HITMAP_INITIAL_SIZE; /* move to the next word */
+			/* idx & ( ~ _BIT_NUMBER_MASK ) - global level index of the first
+			 *   bit at the current word
+			 * + HITMAP_INITIAL_SIZE - move to the next word
+			 */
+			idx = ( idx & ( ~ _BIT_NUMBER_MASK ) ) + HITMAP_INITIAL_SIZE;
 
-			if( idx >= ( 1ul << cur_pow )  ) /* we are out from map */
+			/* if we have run out of map we exit from discover */
+			if( idx >= _pow2( cur_pow )  )
 				return 0;
 
 			if( cur_pow > 2 * _WORD_POW ) {
 				cur_pow -= _WORD_POW;
-				level_border += ( 1ul << ( cur_pow + 1 ) );
+				level_border += _pow2( cur_pow + 1 );
 				idx >>= _WORD_POW;
 			} else {
 				if( cur_pow >= ( 2 + _WORD_POW ) ) {
 					cur_pow -= _WORD_POW;
-					level_border += ( 1ul << ( cur_pow + 1 ) );
+					level_border += _pow2( cur_pow + 1 );
 					idx >>= cur_pow;
 				}
 
@@ -359,8 +343,8 @@ static int __map_bob_up( AO_t **level_borderp,
 	else
 		bitn = __get_next_bit_index( level_border, idx, which );
 
+	/* if bob_up has finished successfully we move to sink stage */
 	if( bitn != 0 ) {
-		/* bob_up is successfully finished; moving to sink stage */
 		*idxp =( idx & ( ~ _BIT_NUMBER_MASK ) ) | ( bitn - 1 );
 		*cur_powp = cur_pow;
 		*level_borderp = level_border;
@@ -380,12 +364,12 @@ static int __map_bob_up( AO_t **level_borderp,
  * to clarify the index in series. For that, algorithm steps down the hierarchy
  * down to the level 1.
  * @param level_borderp pointer to modifiable variable storing pointer to
- *                      current level of map; services for passing current level
+ *                      current level of map; serves for passing current level
  *                      between "bob up" and "sink" stages
  * @param cur_powp pointer to modifiable variable storing logarithm base 2 from
- *                 bit capacity of the current level; services the same purpose
+ *                 bit capacity of the current level; serves the same purpose
  * @param idxp pointer to modifiable variable storing bit index at the
- *             *level_borderp level; services the same purpose
+ *             *level_borderp level; serves the same purpose
  * @param which operation selector
  * @return == 1 if algorithm found desirable kind of bit at particular level
  *         == 0 otherwise (we met concurrent modification operation; hence
@@ -401,7 +385,7 @@ static int __map_sink( AO_t **level_borderp,
 ) {
 	int cur_pow = *cur_powp;
 
-	AO_t *level_border = *level_borderp - ( 1ul << ( cur_pow + 1 ) );
+	AO_t *level_border = *level_borderp - _pow2( cur_pow + 1 );
 	size_t idx = *idxp << ( ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow );
 	cur_pow += _WORD_POW;
 
@@ -421,7 +405,7 @@ static int __map_sink( AO_t **level_borderp,
 		}
 
 		idx = ( ( idx & ( ~ _BIT_NUMBER_MASK ) ) | ( bitn - 1 ) ) << _WORD_POW;
-		level_border -= ( 1ul << ( cur_pow + 1 ) );
+		level_border -= _pow2( cur_pow + 1 );
 		cur_pow += _WORD_POW;
 	}
 
@@ -481,11 +465,12 @@ size_t _hitmap_discover( map_t *map,
 
 	/* long path */
 	start_idx += HITMAP_INITIAL_SIZE;
-	if( start_idx >= ( 1ul << map->len_pow )  ) /* run out from map border */
+	/* if we have run out of map we exit with error value */
+	if( start_idx >= _pow2( map->len_pow )  )
 		return SIZE_MAX;
 
 	int cur_pow = map->len_pow - _WORD_POW;
-	AO_t *level_border = map->bits + ( 1ul << cur_pow );
+	AO_t *level_border = map->bits + _pow2( cur_pow );
 	start_idx >>= ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
 	int initial_cur_pow = cur_pow;
 	while( 1 ) {
@@ -498,8 +483,8 @@ size_t _hitmap_discover( map_t *map,
 			) )
 				return SIZE_MAX;
 
+			/* if the next level is 0-level the we don't need sinking */
 			if( ( cur_pow + _WORD_POW ) >= map->len_pow ) {
-				/* we don't need sinking because we are at level 1 already */
 				start_idx <<= ( cur_pow < _WORD_POW ) ? cur_pow : _WORD_POW;
 				break;
 			}
@@ -514,14 +499,16 @@ size_t _hitmap_discover( map_t *map,
 			( new_idx = __scan_0_level( map, start_idx, which ) ) !=
 			SIZE_MAX
 		)
-			return new_idx; /* we found the bit! */
+			return new_idx;
 
+		/* we don't find desirable kind of bit at level 0 */
 		start_idx += HITMAP_INITIAL_SIZE;
-		if( start_idx >= ( 1ul << map->len_pow )  ) /* we are out of map */
+		/* if we have run out of map we exit with error value */
+		if( start_idx >= _pow2( map->len_pow )  )
 			return SIZE_MAX;
 
 		cur_pow = initial_cur_pow;
-		level_border = map->bits + ( 1ul << cur_pow );
+		level_border = map->bits + _pow2( cur_pow );
 		start_idx >>= ( cur_pow > _WORD_POW ) ? _WORD_POW : cur_pow;
 	}
 
@@ -529,7 +516,7 @@ size_t _hitmap_discover( map_t *map,
 }
 
 int _dummy_has( map_t *map, enum hitmap_mark which ) {
-	size_t limit = 1ul << ( map->len_pow - _WORD_POW );
+	size_t limit = _pow2( map->len_pow - _WORD_POW );
 	AO_t what = 0;
 	switch( which ) {
 		case BIT_UNSET:
@@ -553,7 +540,7 @@ int _hitmap_has( map_t *map, enum hitmap_mark which ) {
 	size_t shift = ( ( map->len_pow % _WORD_POW ) == 1 ) ? 2 : 1;
 
 	/* checking first pair */
-	if( AO_load( map->bits_border - ( shift * 2 ) + which ) != 0 )
+	if( AO_load( map->bits_border - ( shift << 1 ) + which ) != 0 )
 		return 1;
 	else {
 		/* checking second pair if it's the case */
