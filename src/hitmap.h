@@ -144,6 +144,10 @@
 #include <limits.h>
 #include <string.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Number of bits in minimal map.
  */
@@ -453,5 +457,9 @@ static inline int hitmap_has( map_t *map, enum hitmap_mark which ) {
 		_dummy_has( map, which ) :
 		_hitmap_has( map, which );
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
