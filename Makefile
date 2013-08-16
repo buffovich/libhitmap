@@ -7,7 +7,7 @@ include_ 	= /usr/include $(ROOT)/src $(ROOT)/atomic_ops
 LIBNAME			= hitmap
 CC				?= gcc
 LINKFLAGS		= -Xlinker --no-as-needed -Xlinker -Bdynamic -shared -Xlinker --export-dynamic -o lib$(LIBNAME).so
-FLAGS			= -Wall -Wextra
+FLAGS			= -Wall -Wextra -D_REENTRANT
 
 ifdef DEBUG
 DEBUG_FORMAT	?= gdb
